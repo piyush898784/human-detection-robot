@@ -8,7 +8,6 @@ __pycache__/
 
 # VS Code
 .vscode/
-known_faces/
 # Environment variables
 .env
 
