@@ -4,45 +4,45 @@
    ========================================================================== */
 
 :root {
-    /* Color Palette */
-    --bg-deep: #060911;
-    --bg-surface: #0c121e;
-    --bg-card: rgba(13, 19, 33, 0.75);
-    --bg-card-hover: rgba(18, 27, 46, 0.85);
-    --bg-overlay: rgba(6, 9, 17, 0.88);
+    /* Refined Obsidian & Cyber-Tactical Palette */
+    --bg-deep: #070a12;
+    --bg-surface: #0c1220;
+    --bg-card: rgba(12, 18, 32, 0.85);
+    --bg-card-hover: rgba(16, 24, 42, 0.92);
+    --bg-overlay: rgba(7, 10, 18, 0.92);
 
-    /* Tactical Accents */
-    --hud-cyan: #00d4ff;
+    /* Clean High-Contrast Accents */
+    --hud-cyan: #00f0ff;
     --hud-green: #00ff88;
-    --hud-amber: #ffaa00;
+    --hud-amber: #ffb700;
     --hud-red: #ff3366;
     --hud-blue: #3b82f6;
 
-    /* Text Tones */
+    /* Crisp Typography */
     --text-pure: #ffffff;
-    --text-primary: #e2e8f0;
+    --text-primary: #f1f5f9;
     --text-secondary: #94a3b8;
-    --text-dim: #475569;
+    --text-dim: #64748b;
 
-    /* Borders & Glass */
+    /* Sleek Borders & Glassmorphism */
     --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-hud: rgba(0, 212, 255, 0.25);
-    --border-active: rgba(0, 255, 136, 0.4);
+    --border-hud: rgba(0, 240, 255, 0.22);
+    --border-active: rgba(0, 255, 136, 0.45);
     --glass-blur: blur(16px);
 
-    /* Tactical Glows */
-    --glow-cyan: 0 0 16px rgba(0, 212, 255, 0.35);
+    /* Ambient Glows */
+    --glow-cyan: 0 0 16px rgba(0, 240, 255, 0.35);
     --glow-green: 0 0 20px rgba(0, 255, 136, 0.4);
     --glow-red: 0 0 16px rgba(255, 51, 102, 0.4);
 
-    /* Typography */
+    /* Modern Typography */
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-    /* Radii */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
+    /* Standard Radii */
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
 }
 
 * {
@@ -530,37 +530,6 @@ body {
 .hud-corner.bottom-right {
     bottom: 50px; right: 12px;
     border-width: 0 2px 2px 0;
-}
-
-/* Top Compass Ribbon */
-.hud-compass-ribbon {
-    position: absolute;
-    top: 12px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(6, 9, 17, 0.7);
-    border: 1px solid var(--border-hud);
-    padding: 0.2rem 1.2rem;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    color: var(--text-dim);
-    z-index: 12;
-    pointer-events: none;
-    backdrop-filter: blur(4px);
-}
-
-.compass-ticks {
-    display: flex;
-    gap: 0.6rem;
-    align-items: center;
-}
-
-.active-heading {
-    color: var(--hud-cyan);
-    font-weight: 700;
-    border-bottom: 2px solid var(--hud-cyan);
-    padding-bottom: 1px;
 }
 
 /* Center HUD Crosshair & Reticle */

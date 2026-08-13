@@ -94,25 +94,11 @@
                     <img id="video-stream" src="/video_feed" alt="Tactical Video Feed" onerror="this.alt='Connecting to Robot Camera...';">
                     <video id="webrtc-video" autoplay playsinline muted style="display: none;"></video>
 
-                    <!-- Scanline & CRT Effect Overlay -->
-                    <div class="hud-scanlines" id="hud-scanlines"></div>
-                    <div class="hud-grid-overlay" id="hud-grid"></div>
-
                     <!-- Tactical 4-Corner Viewport Brackets -->
                     <div class="hud-corner top-left"></div>
                     <div class="hud-corner top-right"></div>
                     <div class="hud-corner bottom-left"></div>
                     <div class="hud-corner bottom-right"></div>
-
-                    <!-- Top Azimuth Compass Ribbon -->
-                    <div class="hud-compass-ribbon" id="hud-compass">
-                        <div class="compass-ticks">
-                            <span>W</span><span>·</span><span>·</span><span>NW</span><span>·</span><span>·</span>
-                            <span class="active-heading">N 000°</span>
-                            <span>·</span><span>·</span><span>NE</span><span>·</span><span>·</span><span>E</span>
-                        </div>
-                        <div class="compass-marker"></div>
-                    </div>
 
                     <!-- Interactive HUD Canvas (Target boxes, trails, vector lines) -->
                     <canvas id="hud-canvas"></canvas>

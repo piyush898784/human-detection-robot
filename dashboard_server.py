@@ -613,71 +613,25 @@ class FaceDetectionEngine:
                         cv2.line(frame, self.trail[i - 1], self.trail[i], col, max(1, int(2 * alpha)), cv2.LINE_AA)
 
         # ─────────────────────────────────────────────
-        # RENDER FULL SCI-FI HUD ON VIDEO FRAME
+        # CLEAN MINIMAL OVERLAY (Target Brackets & Reticle only)
         # ─────────────────────────────────────────────
         if self.render_hud_overlay:
-            # 1. Top HUD Header
-            hud_panel(frame, 0, 0, w, 30, alpha=0.75)
-            cv2.putText(frame, "HUMAN DETECTION ROBOT  //  TACTICAL HUD",
-                        (12, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48, C_CYAN, 1, cv2.LINE_AA)
-            
-            ts_str = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
-            cv2.putText(frame, ts_str,
-                        (w - 185, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.40, C_WHITE, 1, cv2.LINE_AA)
-
-            # 2. Telemetry Panel (Top-Left)
-            hud_panel(frame, 10, 36, 185, 105, alpha=0.65)
-            cv2.putText(frame, f"FPS    {self.fps:4d}",
-                        (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
-            
-            yaw_col = C_CYAN if abs(self.yaw) < 8 else C_AMBER
-            cv2.putText(frame, f"YAW    {self.yaw:+5.1f} deg",
-                        (20, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.42, yaw_col, 1, cv2.LINE_AA)
-
-            pitch_col = C_CYAN if abs(self.pitch) < 6 else C_AMBER
-            cv2.putText(frame, f"PITCH  {self.pitch:+5.1f} deg",
-                        (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.42, pitch_col, 1, cv2.LINE_AA)
-
-            cv2.putText(frame, "CONF",
-                        (20, 118), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
-            conf_color = C_KNOWN if self.tracked_name != "Unknown" else C_AMBER
-            confidence_bar(frame, 62, 112, 120, self.confidence, conf_color)
-
-            # 3. Status Panel (Top-Right)
-            hud_panel(frame, w - 165, 36, 155, 38, alpha=0.65)
-            status_dot(frame, w - 148, 55, status_color, r=5)
-            cv2.putText(frame, status_text,
-                        (w - 134, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.52, C_WHITE, 1, cv2.LINE_AA)
-
-            # 4. Known Persons Badge
-            hud_panel(frame, w - 165, 80, 155, 26, alpha=0.65)
-            cv2.putText(frame, f"ROSTER: {len(self.known_names)} PERSONS",
-                        (w - 155, 98), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
-
-            # 5. Center Reticle & Crosshair
-            crosshair(frame, cx_f, cy_f, sz=22, color=C_CYAN)
-
-            # 6. Bottom Command Banner
-            if self.tracking:
-                cmd_w = 190
-                hud_panel(frame, (w - cmd_w) // 2, h - 42, cmd_w, 32, alpha=0.85)
-                cv2.putText(frame, self.command,
-                            ((w - cmd_w) // 2 + 16, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.52, C_CYAN, 1, cv2.LINE_AA)
+            # Elegant center crosshair
+            crosshair(frame, cx_f, cy_f, sz=18, color=C_CYAN)
 
         return frame
 
     def generate_simulated_frame(self):
-        """Generates high-speed 60 FPS simulated HUD feed when no physical camera is attached."""
+        """Generates high-speed clean simulated HUD feed when no physical camera is attached."""
         w, h = 640, 480
         frame = np.zeros((h, w, 3), dtype=np.uint8)
         self.sim_angle += 0.05
 
-        # Background grid
-        for gy in range(0, h, 40):
-            cv2.line(frame, (0, gy), (w, gy), (18, 24, 38), 1)
-        for gx in range(0, w, 40):
-            cv2.line(frame, (gx, 0), (gx, h), (18, 24, 38), 1)
+        # Subtle clean background grid
+        for gy in range(0, h, 60):
+            cv2.line(frame, (0, gy), (w, gy), (14, 20, 32), 1)
+        for gx in range(0, w, 60):
+            cv2.line(frame, (gx, 0), (gx, h), (14, 20, 32), 1)
 
         target_cx = int(w / 2 + math.sin(self.sim_angle) * 160)
         target_cy = int(h / 2 + math.cos(self.sim_angle * 0.7) * 90)
@@ -713,33 +667,7 @@ class FaceDetectionEngine:
                 col = tuple(int(c * alpha) for c in C_CYAN)
                 cv2.line(frame, self.trail[i - 1], self.trail[i], col, max(1, int(2 * alpha)), cv2.LINE_AA)
 
-        # Full HUD
-        hud_panel(frame, 0, 0, w, 30, alpha=0.75)
-        cv2.putText(frame, "HUMAN DETECTION ROBOT  //  TACTICAL HUD (SIM 20FPS)",
-                    (12, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48, C_CYAN, 1, cv2.LINE_AA)
-        ts_str = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
-        cv2.putText(frame, ts_str, (w - 185, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.40, C_WHITE, 1, cv2.LINE_AA)
-
-        hud_panel(frame, 10, 36, 185, 105, alpha=0.65)
-        cv2.putText(frame, "FPS    20.0 (SIM)", (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
-        cv2.putText(frame, f"YAW    {self.yaw:+5.1f} deg", (20, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_CYAN, 1, cv2.LINE_AA)
-        cv2.putText(frame, f"PITCH  {self.pitch:+5.1f} deg", (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_CYAN, 1, cv2.LINE_AA)
-        cv2.putText(frame, "CONF", (20, 118), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
-        confidence_bar(frame, 62, 112, 120, self.confidence, C_KNOWN)
-
-        hud_panel(frame, w - 165, 36, 155, 38, alpha=0.65)
-        status_dot(frame, w - 148, 55, C_KNOWN, r=5)
-        cv2.putText(frame, "TRACKING", (w - 134, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.52, C_WHITE, 1, cv2.LINE_AA)
-
-        hud_panel(frame, w - 165, 80, 155, 26, alpha=0.65)
-        cv2.putText(frame, f"ROSTER: {len(self.known_names)} PERSONS", (w - 155, 98), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
-
-        crosshair(frame, w // 2, h // 2, sz=22, color=C_CYAN)
-
-        cmd_w = 190
-        hud_panel(frame, (w - cmd_w) // 2, h - 42, cmd_w, 32, alpha=0.85)
-        cv2.putText(frame, self.command, ((w - cmd_w) // 2 + 16, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.52, C_CYAN, 1, cv2.LINE_AA)
-
+        crosshair(frame, w // 2, h // 2, sz=18, color=C_CYAN)
         return frame
 
     def get_telemetry(self):
