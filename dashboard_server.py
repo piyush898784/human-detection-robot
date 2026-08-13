@@ -293,6 +293,7 @@ class FaceDetectionEngine:
     def load_known_faces(self):
         self.known_encodings = []
         self.known_names = []
+        self.unique_names = set()
         if not FACE_REC_AVAILABLE:
             return
 
@@ -301,26 +302,27 @@ class FaceDetectionEngine:
         for entry in os.scandir(self.known_faces_dir):
             if entry.is_dir():
                 person_name = entry.name
-                person_encs = []
+                p_count = 0
                 for img_file in os.scandir(entry.path):
                     if img_file.name.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
                         try:
                             img = face_recognition.load_image_file(img_file.path)
                             encs = face_recognition.face_encodings(img)
-                            if encs: person_encs.append(encs[0])
+                            if encs:
+                                self.known_encodings.append(encs[0])
+                                self.known_names.append(person_name)
+                                self.unique_names.add(person_name)
+                                p_count += 1
                         except Exception as e:
                             print(f"  [!] Skipped {img_file.path}: {e}")
-                if person_encs:
-                    avg_enc = np.mean(person_encs, axis=0)
-                    self.known_encodings.append(avg_enc)
-                    self.known_names.append(person_name)
-                    print(f"  [+] {person_name}: trained on {len(person_encs)} photo(s)")
+                if p_count > 0:
+                    print(f"  [+] {person_name}: trained on {p_count} photo(s)")
 
         # Flat files
         for img_file in os.scandir(self.known_faces_dir):
             if img_file.is_file() and img_file.name.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
                 person_name = os.path.splitext(img_file.name)[0]
-                if person_name in self.known_names:
+                if person_name in self.unique_names:
                     continue
                 try:
                     img = face_recognition.load_image_file(img_file.path)
@@ -328,11 +330,12 @@ class FaceDetectionEngine:
                     if encs:
                         self.known_encodings.append(encs[0])
                         self.known_names.append(person_name)
+                        self.unique_names.add(person_name)
                         print(f"  [+] {person_name}: trained on 1 flat photo")
                 except Exception as e:
                     print(f"  [!] Skipped {img_file.path}: {e}")
 
-        print(f"Total known faces loaded: {len(self.known_names)}\n")
+        print(f"Total training vectors: {len(self.known_encodings)} across {len(self.unique_names)} persons\n")
 
     def add_face(self, name, image_bytes):
         if not FACE_REC_AVAILABLE:
@@ -389,25 +392,25 @@ class FaceDetectionEngine:
 
     def get_faces(self):
         faces = []
-        for name in self.known_names:
+        for name in sorted(list(self.unique_names)):
             found = False
-            for ext in ['.jpg', '.jpeg', '.png', '.bmp']:
-                p = os.path.join(self.known_faces_dir, f"{name}{ext}")
-                if os.path.exists(p):
-                    with open(p, "rb") as img_file:
-                        b64 = base64.b64encode(img_file.read()).decode('utf-8')
-                        faces.append({"name": name, "thumbnail": b64})
-                        found = True
-                    break
+            dir_p = os.path.join(self.known_faces_dir, name)
+            if os.path.exists(dir_p) and os.path.isdir(dir_p):
+                for f in sorted(os.listdir(dir_p)):
+                    if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+                        with open(os.path.join(dir_p, f), "rb") as img_file:
+                            b64 = base64.b64encode(img_file.read()).decode('utf-8')
+                            faces.append({"name": name, "thumbnail": b64})
+                            found = True
+                        break
             if not found:
-                dir_p = os.path.join(self.known_faces_dir, name)
-                if os.path.exists(dir_p) and os.path.isdir(dir_p):
-                    for f in os.listdir(dir_p):
-                        if f.lower().endswith(('.jpg', '.jpeg', '.png')):
-                            with open(os.path.join(dir_p, f), "rb") as img_file:
-                                b64 = base64.b64encode(img_file.read()).decode('utf-8')
-                                faces.append({"name": name, "thumbnail": b64})
-                            break
+                for ext in ['.jpg', '.jpeg', '.png', '.bmp']:
+                    p = os.path.join(self.known_faces_dir, f"{name}{ext}")
+                    if os.path.exists(p):
+                        with open(p, "rb") as img_file:
+                            b64 = base64.b64encode(img_file.read()).decode('utf-8')
+                            faces.append({"name": name, "thumbnail": b64})
+                        break
         return faces
 
     def log_event(self, name, action, confidence=None):
@@ -420,16 +423,20 @@ class FaceDetectionEngine:
         self.events.append(evt)
         socketio.emit('detection_event', evt)
 
-    def _async_recognize_face(self, face_rgb):
-        """Runs face encoding asynchronously so video frame rate never drops."""
+    def _async_recognize_face(self, rgb_frame, top, right, bottom, left):
+        """Runs fast scaled face encoding asynchronously with exact face coordinates."""
         try:
-            encs = face_recognition.face_encodings(face_rgb)
+            scale = 0.5
+            rgb_small = cv2.resize(rgb_frame, (0, 0), fx=scale, fy=scale)
+            loc_small = [(int(top * scale), int(right * scale), int(bottom * scale), int(left * scale))]
+            encs = face_recognition.face_encodings(rgb_small, loc_small)
             if encs and self.known_encodings:
                 distances = face_recognition.face_distance(self.known_encodings, encs[0])
                 best_idx = int(np.argmin(distances))
-                if distances[best_idx] < 0.56:
+                min_dist = distances[best_idx]
+                if min_dist < 0.58:
                     matched_name = self.known_names[best_idx]
-                    conf = float(1.0 - distances[best_idx])
+                    conf = float(1.0 - min_dist)
                     if matched_name != self.tracked_name:
                         self.log_event(matched_name, "IDENTIFIED", conf)
                     self.tracked_name = matched_name
@@ -526,14 +533,13 @@ class FaceDetectionEngine:
             if FACE_REC_AVAILABLE and self.known_encodings and not self.is_recognizing:
                 with self.recognition_lock:
                     self.is_recognizing = True
-                # Crop face ROI for ultra-fast encoding
-                crop_y1 = max(0, by - 10)
-                crop_y2 = min(h, by + bh + 10)
-                crop_x1 = max(0, bx - 10)
-                crop_x2 = min(w, bx + bw + 10)
-                face_crop = rgb[crop_y1:crop_y2, crop_x1:crop_x2]
-                if face_crop.shape[0] > 20 and face_crop.shape[1] > 20:
-                    Thread(target=self._async_recognize_face, args=(face_crop,), daemon=True).start()
+                top = max(0, by)
+                right = min(w, bx + bw)
+                bottom = min(h, by + bh)
+                left = max(0, bx)
+                Thread(target=self._async_recognize_face,
+                       args=(rgb.copy(), top, right, bottom, left),
+                       daemon=True).start()
 
             # Target angles relative to FOV
             self.yaw   = (smooth_x - cx_f) / float(w) * self.HORIZONTAL_FOV
