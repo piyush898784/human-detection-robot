@@ -187,7 +187,7 @@ class ThreadedCamera:
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            self.cap.set(cv2.CAP_PROP_FPS, 30)
+            self.cap.set(cv2.CAP_PROP_FPS, 20)
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             
             self.is_opened = True
@@ -690,7 +690,7 @@ class FaceDetectionEngine:
         self.confidence = 0.96
         self.tracked_name = "piyush"
         self.last_bbox = (target_cx - bw // 2, target_cy - bh // 2, bw, bh)
-        self.fps = 60
+        self.fps = 20
 
         self.yaw = (target_cx - w / 2) / float(w) * self.HORIZONTAL_FOV
         self.pitch = (target_cy - h / 2) / float(h) * self.VERTICAL_FOV
@@ -715,13 +715,13 @@ class FaceDetectionEngine:
 
         # Full HUD
         hud_panel(frame, 0, 0, w, 30, alpha=0.75)
-        cv2.putText(frame, "HUMAN DETECTION ROBOT  //  TACTICAL HUD (SIM 60FPS)",
+        cv2.putText(frame, "HUMAN DETECTION ROBOT  //  TACTICAL HUD (SIM 20FPS)",
                     (12, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48, C_CYAN, 1, cv2.LINE_AA)
         ts_str = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
         cv2.putText(frame, ts_str, (w - 185, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.40, C_WHITE, 1, cv2.LINE_AA)
 
         hud_panel(frame, 10, 36, 185, 105, alpha=0.65)
-        cv2.putText(frame, "FPS    60.0 (SIM)", (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
+        cv2.putText(frame, "FPS    20.0 (SIM)", (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
         cv2.putText(frame, f"YAW    {self.yaw:+5.1f} deg", (20, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_CYAN, 1, cv2.LINE_AA)
         cv2.putText(frame, f"PITCH  {self.pitch:+5.1f} deg", (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_CYAN, 1, cv2.LINE_AA)
         cv2.putText(frame, "CONF", (20, 118), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
@@ -746,7 +746,7 @@ class FaceDetectionEngine:
         trail_list = [[int(pt[0]), int(pt[1])] for pt in self.trail]
         bbox_list = [int(v) for v in self.last_bbox] if self.last_bbox is not None else None
         return {
-            "fps":             int(self.fps if self.fps > 0 else 30),
+            "fps":             int(self.fps if self.fps > 0 else 20),
             "yaw":             float(round(float(self.yaw), 2)),
             "pitch":           float(round(float(self.pitch), 2)),
             "command":         str(self.command),
@@ -784,20 +784,20 @@ def video_processing_thread():
 
     if not threaded_cam.is_opened:
         engine.camera_online = False
-        print("[i] Physical camera not connected. Running simulated HUD stream.")
+        print("[i] Physical camera not connected. Running 20 FPS simulated HUD stream.")
         while True:
             sim_frame = engine.generate_simulated_frame()
             ret, buffer = cv2.imencode('.jpg', sim_frame, [cv2.IMWRITE_JPEG_QUALITY, 65, cv2.IMWRITE_JPEG_OPTIMIZE, 0])
             if ret:
                 broadcaster.update(buffer.tobytes())
-            time.sleep(0.016)  # 60 FPS simulation
+            time.sleep(0.05)  # 20 FPS simulation
 
     engine.camera_online = True
 
     while True:
         frame, frame_id = threaded_cam.read()
         if frame is None or frame_id == last_processed_id:
-            time.sleep(0.002)
+            time.sleep(0.005)
             continue
 
         last_processed_id = frame_id
@@ -806,20 +806,21 @@ def video_processing_thread():
         if ret:
             broadcaster.update(buffer.tobytes())
 
-        time.sleep(0.001)
+        # Frame rate regulation for steady 20 FPS optical flow
+        time.sleep(0.01)
 
 
 def telemetry_thread():
     while True:
         socketio.emit('telemetry_update', engine.get_telemetry())
-        time.sleep(0.033)  # 30 Hz real-time telemetry synchronization
+        time.sleep(0.05)  # 20 Hz real-time telemetry synchronization
 
 
 def generate_frames():
-    """Event-synchronized MJPEG stream generator delivering continuous 30-60 FPS with zero duplicate buffering."""
+    """Event-synchronized MJPEG stream generator delivering continuous 20 FPS with zero duplicate buffering."""
     last_sent_id = 0
     while True:
-        frame_bytes, last_sent_id = broadcaster.get_latest(last_sent_id, timeout=0.04)
+        frame_bytes, last_sent_id = broadcaster.get_latest(last_sent_id, timeout=0.06)
         if frame_bytes is not None:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
