@@ -3,450 +3,1032 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Human Detection Robot — Command Center</title>
-    <meta name="description" content="Real-time command center for the autonomous human-following robot">
+    <title>Human Detection Robot — Tactical HUD Command Center</title>
+    <meta name="description" content="Real-time autonomous robot tactical HUD command center with live video, face tracking, telemetry, and gimbal controls">
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
 </head>
-<body>
-    <header class="header">
-        <div class="logo-container">
-            <h1 class="logo-title">ROBOT COMMAND CENTER</h1>
+<body class="theme-tactical">
+    <!-- Top Tactical Navigation Header -->
+    <header class="hud-header">
+        <div class="header-left">
+            <div class="hud-radar-icon">
+                <div class="radar-sweep"></div>
+                <span class="radar-dot"></span>
+            </div>
+            <div class="hud-brand">
+                <div class="brand-title">AUTONOMOUS ROBOT COMMAND</div>
+                <div class="brand-subtitle">TACTICAL HUD MONITOR // SYS-V2.4</div>
+            </div>
         </div>
-        <div class="live-badge">
-            <div class="pulse-dot"></div>
-            LIVE
+
+        <!-- Center Mission Clock & Heading -->
+        <div class="header-center">
+            <div class="mission-pill">
+                <span class="pill-label">MISSION TIME</span>
+                <span class="pill-value" id="hud-clock">00:00:00 UTC</span>
+            </div>
+            <div class="mission-pill">
+                <span class="pill-label">TARGET MODE</span>
+                <span class="pill-value status-active" id="target-mode-pill">KALMAN TRACKING</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <div class="live-signal-badge online" id="link-badge">
+                <span class="live-pulse"></span>
+                <span class="live-text" id="link-text">LINK ACTIVE</span>
+            </div>
+            <button class="btn-hud-icon" id="btn-fullscreen-toggle" title="Toggle Fullscreen HUD (Press F)">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+            </button>
         </div>
     </header>
 
-    <div class="dashboard-container">
-        <div class="main-area">
-            <div class="card video-card">
-                <div class="card-header">
-                    <span class="card-icon">👁</span>
-                    <h2>Camera Feed</h2>
-                </div>
-                <div class="video-container" id="video-container">
-                    <img id="video-feed" src="/video_feed" alt="Video Feed" onerror="this.src=''; this.alt='Camera Offline';">
-                </div>
-            </div>
+    <!-- Main Dashboard Workspace -->
+    <main class="dashboard-workspace">
+        <div class="workspace-grid">
+            
+            <!-- Left & Center: Live HUD Video Viewport Card -->
+            <section class="card viewport-card" id="viewport-card">
+                <div class="viewport-header">
+                    <div class="viewport-title">
+                        <span class="hud-indicator-dot"></span>
+                        <span class="title-text">PRIMARY OPTICAL FEED</span>
+                        <span class="badge-source" id="source-badge">ROBOT CAM</span>
+                    </div>
 
-            <div class="side-panel">
-                <div class="card">
-                    <div class="card-header">
-                        <span class="card-icon">📊</span>
-                        <h2>Telemetry</h2>
-                    </div>
-                    <div class="telemetry-grid">
-                        <div class="telemetry-item">
-                            <div class="gauge-container">
-                                <div class="gauge-arc"></div>
-                                <div class="gauge-needle" id="yaw-needle"></div>
-                            </div>
-                            <div class="telemetry-label">Yaw Angle</div>
-                            <div class="telemetry-value" id="yaw-val">0.0°</div>
+                    <!-- HUD Mode & Toolbar -->
+                    <div class="viewport-toolbar">
+                        <div class="hud-btn-group">
+                            <button class="hud-toggle-btn active" id="btn-toggle-hud" title="Toggle Browser HUD Overlay">HUD</button>
+                            <button class="hud-toggle-btn active" id="btn-toggle-grid" title="Toggle Sci-Fi Grid & Scanlines">GRID</button>
+                            <button class="hud-toggle-btn active" id="btn-toggle-reticle" title="Toggle Tactical Reticle">RETICLE</button>
+                            <button class="hud-toggle-btn active" id="btn-toggle-audio" title="Toggle Tactical Lock Sound">AUDIO</button>
                         </div>
-                        <div class="telemetry-item">
-                            <div class="gauge-container">
-                                <div class="gauge-arc"></div>
-                                <div class="gauge-needle" id="pitch-needle"></div>
-                            </div>
-                            <div class="telemetry-label">Pitch Angle</div>
-                            <div class="telemetry-value" id="pitch-val">0.0°</div>
+                        <button class="hud-action-btn" id="btn-snapshot" title="Capture Snapshot Frame">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                                <circle cx="12" cy="13" r="4"/>
+                            </svg>
+                            SNAP
+                        </button>
+                        <div class="source-select-wrapper">
+                            <select id="camera-source-select" class="hud-select">
+                                <option value="server">Server Feed (/video_feed)</option>
+                                <option value="webrtc">Browser Local Webcam</option>
+                                <option value="ipcam">Custom IP / ESP32-CAM</option>
+                            </select>
                         </div>
-                        <div class="telemetry-item">
-                            <div class="telemetry-label">FPS</div>
-                            <div class="telemetry-value" id="fps-val">0</div>
-                        </div>
-                        <div class="telemetry-item">
-                            <div class="telemetry-label">Target</div>
-                            <div class="telemetry-value" id="target-val" style="font-size: 1.2rem;">None</div>
-                        </div>
-                    </div>
-                    <div class="confidence-container">
-                        <div class="confidence-label">
-                            <span>Confidence</span>
-                            <span id="confidence-text">0%</span>
-                        </div>
-                        <div class="confidence-bar-bg">
-                            <div class="confidence-bar" id="confidence-bar"></div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 15px; text-align: center;">
-                        <div class="telemetry-label">Current Command</div>
-                        <div class="telemetry-value" id="command-val" style="color: var(--accent-amber);">CENTERED</div>
                     </div>
                 </div>
 
-                <div class="card" style="margin-top: 20px;">
-                    <div class="card-header">
-                        <span class="card-icon">🎮</span>
-                        <h2>Robot Control</h2>
-                    </div>
-                    <div class="control-panel">
-                        <div class="d-pad">
-                            <button class="d-btn forward" data-cmd="F">▲</button>
-                            <button class="d-btn left" data-cmd="L">◀</button>
-                            <button class="d-btn stop" data-cmd="S">■</button>
-                            <button class="d-btn right" data-cmd="R">▶</button>
-                            <button class="d-btn backward" data-cmd="B">▼</button>
+                <!-- Live Video & HUD Viewport -->
+                <div class="hud-viewport-container" id="hud-viewport">
+                    <!-- Base Video Stream -->
+                    <img id="video-stream" src="/video_feed" alt="Tactical Video Feed" onerror="this.alt='Connecting to Robot Camera...';">
+                    <video id="webrtc-video" autoplay playsinline muted style="display: none;"></video>
+
+                    <!-- Scanline & CRT Effect Overlay -->
+                    <div class="hud-scanlines" id="hud-scanlines"></div>
+                    <div class="hud-grid-overlay" id="hud-grid"></div>
+
+                    <!-- Tactical 4-Corner Viewport Brackets -->
+                    <div class="hud-corner top-left"></div>
+                    <div class="hud-corner top-right"></div>
+                    <div class="hud-corner bottom-left"></div>
+                    <div class="hud-corner bottom-right"></div>
+
+                    <!-- Top Azimuth Compass Ribbon -->
+                    <div class="hud-compass-ribbon" id="hud-compass">
+                        <div class="compass-ticks">
+                            <span>W</span><span>·</span><span>·</span><span>NW</span><span>·</span><span>·</span>
+                            <span class="active-heading">N 000°</span>
+                            <span>·</span><span>·</span><span>NE</span><span>·</span><span>·</span><span>E</span>
                         </div>
-                        <div class="keyboard-hints">
-                            <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to move &bull; <kbd>Space</kbd> to stop
+                        <div class="compass-marker"></div>
+                    </div>
+
+                    <!-- Interactive HUD Canvas (Target boxes, trails, vector lines) -->
+                    <canvas id="hud-canvas"></canvas>
+
+                    <!-- Center Tactical Crosshair & Reticle -->
+                    <div class="hud-center-reticle" id="hud-center-reticle">
+                        <div class="reticle-ring-outer"></div>
+                        <div class="reticle-ring-inner"></div>
+                        <div class="reticle-cross-h"></div>
+                        <div class="reticle-cross-v"></div>
+                        <div class="reticle-pip"></div>
+                        <div class="reticle-angle-readout" id="reticle-angles">YAW: 0.0° | PITCH: 0.0°</div>
+                    </div>
+
+                    <!-- Target Lock Box & Floating Pill (DOM Overlay) -->
+                    <div class="target-lock-box" id="target-lock-box">
+                        <div class="lock-bracket tl"></div>
+                        <div class="lock-bracket tr"></div>
+                        <div class="lock-bracket bl"></div>
+                        <div class="lock-bracket br"></div>
+                        <div class="target-id-pill" id="target-id-pill">
+                            <span class="target-name" id="target-pill-name">ACQUIRING</span>
+                            <span class="target-score" id="target-pill-score">0%</span>
+                        </div>
+                        <div class="target-meta" id="target-meta">RANGE: ~1.2m | DELTA: +0.0°</div>
+                    </div>
+
+                    <!-- Viewport Bottom HUD Telemetry Strip -->
+                    <div class="viewport-hud-bottom">
+                        <div class="telemetry-chip">
+                            <span class="chip-title">COMMAND</span>
+                            <span class="chip-val highlight" id="hud-cmd-chip">● CENTERED</span>
+                        </div>
+                        <div class="telemetry-chip">
+                            <span class="chip-title">TARGET</span>
+                            <span class="chip-val" id="hud-target-chip">NONE</span>
+                        </div>
+                        <div class="telemetry-chip">
+                            <span class="chip-title">LOCK CONF</span>
+                            <span class="chip-val" id="hud-conf-chip">0%</span>
+                        </div>
+                        <div class="telemetry-chip">
+                            <span class="chip-title">OPTICAL FPS</span>
+                            <span class="chip-val" id="hud-fps-chip">0</span>
                         </div>
                     </div>
                 </div>
-            </div>
+            </section>
+
+            <!-- Right: Telemetry & Navigation Panel -->
+            <aside class="hud-sidebar">
+                
+                <!-- Card 1: Orientation & Gimbal Telemetry -->
+                <div class="card telemetry-card">
+                    <div class="card-header">
+                        <span class="header-icon">🧭</span>
+                        <h3>Gimbal & Angles</h3>
+                        <span class="badge-status-dot" id="dot-gimbal"></span>
+                    </div>
+
+                    <div class="gauges-container">
+                        <!-- Yaw Gauge -->
+                        <div class="gauge-item">
+                            <div class="gauge-dial">
+                                <div class="gauge-ticks"></div>
+                                <div class="gauge-needle" id="gauge-yaw-needle"></div>
+                                <div class="gauge-center-cap"></div>
+                            </div>
+                            <div class="gauge-info">
+                                <div class="gauge-label">YAW ANGLE</div>
+                                <div class="gauge-value" id="val-yaw">0.0°</div>
+                                <div class="gauge-sub">LIMIT ±30°</div>
+                            </div>
+                        </div>
+
+                        <!-- Pitch Gauge -->
+                        <div class="gauge-item">
+                            <div class="gauge-dial">
+                                <div class="gauge-ticks"></div>
+                                <div class="gauge-needle" id="gauge-pitch-needle"></div>
+                                <div class="gauge-center-cap"></div>
+                            </div>
+                            <div class="gauge-info">
+                                <div class="gauge-label">PITCH ANGLE</div>
+                                <div class="gauge-value" id="val-pitch">0.0°</div>
+                                <div class="gauge-sub">LIMIT ±22°</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Confidence Bar -->
+                    <div class="confidence-section">
+                        <div class="conf-header">
+                            <span>MATCH CONFIDENCE</span>
+                            <span class="conf-pct" id="val-conf-pct">0%</span>
+                        </div>
+                        <div class="conf-meter-track">
+                            <div class="conf-meter-fill" id="conf-meter-fill"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Card 2: Directional Steering Compass & Command -->
+                <div class="card nav-card">
+                    <div class="card-header">
+                        <span class="header-icon">🎯</span>
+                        <h3>Navigation Vector</h3>
+                    </div>
+
+                    <div class="nav-compass-display">
+                        <div class="compass-circle">
+                            <div class="compass-arrow arrow-up" id="arrow-u" data-dir="UP">▲</div>
+                            <div class="compass-arrow arrow-right" id="arrow-r" data-dir="RIGHT">▶</div>
+                            <div class="compass-arrow arrow-down" id="arrow-d" data-dir="DOWN">▼</div>
+                            <div class="compass-arrow arrow-left" id="arrow-l" data-dir="LEFT">◀</div>
+                            <div class="compass-center" id="compass-center-dot">●</div>
+                        </div>
+                        <div class="nav-status-banner" id="nav-banner">CENTERED</div>
+                    </div>
+                </div>
+
+                <!-- Card 3: Robot Direct Control Pad -->
+                <div class="card control-card">
+                    <div class="card-header">
+                        <span class="header-icon">🎮</span>
+                        <h3>Robot Manual Drive</h3>
+                    </div>
+
+                    <div class="dpad-container">
+                        <div class="dpad-grid">
+                            <div></div>
+                            <button class="dpad-btn btn-fwd" data-cmd="F" title="Forward (W / ↑)">▲</button>
+                            <div></div>
+                            <button class="dpad-btn btn-left" data-cmd="L" title="Turn Left (A / ←)">◀</button>
+                            <button class="dpad-btn btn-stop" data-cmd="S" title="Emergency Stop (Space)">■</button>
+                            <button class="dpad-btn btn-right" data-cmd="R" title="Turn Right (D / →)">▶</button>
+                            <div></div>
+                            <button class="dpad-btn btn-rev" data-cmd="B" title="Reverse (S / ↓)">▼</button>
+                            <div></div>
+                        </div>
+                    </div>
+                    <div class="keyboard-legend">
+                        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Arrows to Drive</span>
+                        <span><kbd>Space</kbd> Stop</span>
+                    </div>
+                </div>
+
+            </aside>
         </div>
 
-        <div class="bottom-area">
-            <div class="card">
+        <!-- Bottom Row: Face Database & Event Timeline -->
+        <div class="bottom-workspace-grid">
+            
+            <!-- Face Gallery Database -->
+            <section class="card gallery-card">
                 <div class="card-header">
-                    <span class="card-icon">👥</span>
-                    <h2>Face Gallery</h2>
+                    <div class="header-title-group">
+                        <span class="header-icon">👤</span>
+                        <h3>Target Roster Database</h3>
+                    </div>
+                    <span class="badge-count" id="badge-face-count">0 Persons</span>
                 </div>
-                <div class="gallery-container">
-                    <div class="face-gallery-grid" id="face-gallery-grid">
-                        <button class="add-face-btn" id="add-face-btn">
-                            <span>+</span>
-                            Add Face
+                
+                <div class="gallery-scroll-area">
+                    <div class="gallery-grid" id="gallery-grid">
+                        <button class="add-target-btn" id="btn-open-add-modal">
+                            <span class="add-icon">+</span>
+                            <span>Enroll Face</span>
                         </button>
                     </div>
                 </div>
-            </div>
+            </section>
 
-            <div class="card">
+            <!-- Real-Time Event Log -->
+            <section class="card log-card">
                 <div class="card-header">
-                    <span class="card-icon">📋</span>
-                    <h2>Detection Event Log</h2>
+                    <div class="header-title-group">
+                        <span class="header-icon">⚡</span>
+                        <h3>Tactical Event Stream</h3>
+                    </div>
+                    <div class="log-actions">
+                        <button class="btn-subtle" id="btn-clear-logs">Clear</button>
+                    </div>
                 </div>
-                <div class="event-log" id="event-log">
+                <div class="log-stream-container" id="log-stream">
+                    <!-- Events dynamically rendered -->
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- Bottom Status Bar -->
+    <footer class="hud-footer">
+        <div class="footer-status-group">
+            <div class="footer-item">
+                <span class="status-indicator online" id="status-ind-cam"></span>
+                <span>CAMERA: <strong id="status-txt-cam">ONLINE</strong></span>
+            </div>
+            <div class="footer-item">
+                <span class="status-indicator online" id="status-ind-track"></span>
+                <span>TRACKER: <strong id="status-txt-track">READY</strong></span>
+            </div>
+            <div class="footer-item">
+                <span class="status-indicator online" id="status-ind-ws"></span>
+                <span>SOCKET: <strong id="status-txt-ws">CONNECTED</strong></span>
+            </div>
+            <div class="footer-item">
+                <span>RECOGNITION: <strong>ACTIVE</strong></span>
+            </div>
+        </div>
+        <div class="footer-meta">
+            <span>HUMAN DETECTION ROBOT // TACTICAL HUD CONSOLE</span>
+        </div>
+    </footer>
+
+    <!-- Add Face Modal Overlay -->
+    <div class="modal-backdrop" id="add-modal">
+        <div class="modal-window">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span class="modal-icon">👤</span>
+                    <h3>Enroll New Target Profile</h3>
+                </div>
+                <button class="modal-close-btn" id="btn-close-modal">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="input-target-name">TARGET IDENTITY / NAME</label>
+                    <input type="text" id="input-target-name" class="hud-input" placeholder="e.g. Commander Shepard" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label>TARGET FACIAL REFERENCE PHOTO</label>
+                    <div class="drop-zone" id="face-drop-zone">
+                        <div class="drop-zone-prompt" id="drop-prompt">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                            </svg>
+                            <span>Click or Drag & Drop face photo here</span>
+                            <span class="drop-sub">JPG, PNG, or WEBP (Clear, well-lit frontal face)</span>
+                        </div>
+                        <img id="upload-preview" class="upload-preview-img" alt="Target Preview">
+                        <input type="file" id="target-file-input" style="display: none" accept="image/*">
+                    </div>
+                </div>
+
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="btn-cancel-modal">Cancel</button>
+                    <button class="btn-primary" id="btn-submit-face">Save to Database</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <footer class="status-footer">
-        <div class="status-indicators">
-            <div class="status-item">
-                <div class="status-dot" id="status-cam"></div>
-                Camera
-            </div>
-            <div class="status-item">
-                <div class="status-dot" id="status-track"></div>
-                Tracking Active
-            </div>
-            <div class="status-item">
-                <div class="status-dot" id="status-ws"></div>
-                WebSocket
-            </div>
-            <div class="status-item">
-                Known Faces: <span id="status-faces">0</span>
-            </div>
-        </div>
-        <div>v1.0.0 &bull; Human Detection System</div>
-    </footer>
-
-    <!-- Add Face Modal -->
-    <div class="modal-overlay" id="add-modal">
-        <div class="modal-content">
+    <!-- Custom IP Camera Modal -->
+    <div class="modal-backdrop" id="ipcam-modal">
+        <div class="modal-window">
             <div class="modal-header">
-                <h2>Add Known Face</h2>
-                <button class="modal-close" id="close-modal">&times;</button>
+                <div class="modal-title">
+                    <span class="modal-icon">📡</span>
+                    <h3>Connect IP / ESP32-CAM Stream</h3>
+                </div>
+                <button class="modal-close-btn" id="btn-close-ipcam-modal">&times;</button>
             </div>
-            <div class="form-group">
-                <label for="face-name">Person's Name</label>
-                <input type="text" id="face-name" class="form-input" placeholder="e.g. John Doe">
-            </div>
-            <div class="form-group">
-                <label>Face Image (Clear, well-lit)</label>
-                <div class="drop-zone" id="drop-zone">
-                    <div class="drop-zone-text">Drag & Drop image here or click to browse</div>
-                    <img id="drop-preview" class="drop-zone-img" src="" alt="Preview">
-                    <input type="file" id="file-input" style="display: none" accept="image/*">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="ipcam-url-input">STREAM URL (MJPEG / HTTP)</label>
+                    <input type="text" id="ipcam-url-input" class="hud-input" placeholder="http://192.168.4.1:81/stream">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn-secondary" id="btn-cancel-ipcam">Cancel</button>
+                    <button class="btn-primary" id="btn-connect-ipcam">Connect Stream</button>
                 </div>
             </div>
-            <button class="btn-primary" id="submit-face">Add Face</button>
         </div>
     </div>
 
     <script>
-        // Socket.IO connection
+        // ─────────────────────────────────────────────
+        // TACTICAL HUD CONTROLLER & WEBSOCKET ENGINE
+        // ─────────────────────────────────────────────
         const socket = io();
-        
         let isConnected = false;
+        let lastTelemetry = null;
+        let hudSettings = {
+            hud: true,
+            grid: true,
+            reticle: true,
+            audio: true
+        };
+        let lastLockedTarget = null;
+        let webRtcStream = null;
+
+        // Audio synthesizer (Tactical SFX via Web Audio API)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         
+        function playTacticalBeep(freq = 880, duration = 0.08, type = 'sine') {
+            if (!hudSettings.audio) return;
+            try {
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {}
+        }
+
+        function playLockChirp() {
+            if (!hudSettings.audio) return;
+            playTacticalBeep(1200, 0.06, 'triangle');
+            setTimeout(() => playTacticalBeep(1800, 0.1, 'sine'), 70);
+        }
+
+        // Mission Clock
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getUTCHours()).padStart(2, '0');
+            const m = String(now.getUTCMinutes()).padStart(2, '0');
+            const s = String(now.getUTCSeconds()).padStart(2, '0');
+            document.getElementById('hud-clock').textContent = `${h}:${m}:${s} UTC`;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Socket IO Lifecycle
         socket.on('connect', () => {
             isConnected = true;
-            document.getElementById('status-ws').className = 'status-dot online';
-        });
-        
-        socket.on('disconnect', () => {
-            isConnected = false;
-            document.getElementById('status-ws').className = 'status-dot offline';
-        });
-        
-        // Telemetry updates
-        socket.on('telemetry_update', (data) => {
-            // Yaw & Pitch
-            document.getElementById('yaw-val').textContent = data.yaw.toFixed(1) + '°';
-            document.getElementById('pitch-val').textContent = data.pitch.toFixed(1) + '°';
-            
-            // Map -30 to 30 degrees to needle rotation (-90 to 90 for full 180 semi-circle, wait gauge is 90 deg? let's do -45 to 45)
-            // If gauge arc is 180deg (-90 to 90)
-            let yawRot = Math.max(-90, Math.min(90, data.yaw * 3));
-            let pitchRot = Math.max(-90, Math.min(90, data.pitch * 3));
-            document.getElementById('yaw-needle').style.transform = `translateX(-50%) rotate(${yawRot}deg)`;
-            document.getElementById('pitch-needle').style.transform = `translateX(-50%) rotate(${pitchRot}deg)`;
-            
-            // FPS & Target
-            document.getElementById('fps-val').textContent = data.fps;
-            document.getElementById('target-val').textContent = data.tracked_name;
-            
-            // Confidence
-            const conf = Math.round(data.confidence * 100);
-            document.getElementById('confidence-text').textContent = conf + '%';
-            document.getElementById('confidence-bar').style.width = conf + '%';
-            
-            // Command
-            document.getElementById('command-val').textContent = data.command;
-            
-            // Tracking status
-            const vCont = document.getElementById('video-container');
-            const tDot = document.getElementById('status-track');
-            if(data.tracking_status) {
-                vCont.classList.add('tracking');
-                tDot.className = 'status-dot online';
-            } else {
-                vCont.classList.remove('tracking');
-                tDot.className = 'status-dot offline';
-            }
-        });
-        
-        // Detection events
-        socket.on('detection_event', (event) => {
-            addEventToLog(event);
+            document.getElementById('link-badge').className = 'live-signal-badge online';
+            document.getElementById('link-text').textContent = 'LINK ACTIVE';
+            document.getElementById('status-ind-ws').className = 'status-indicator online';
+            document.getElementById('status-txt-ws').textContent = 'CONNECTED';
         });
 
-        // Status updates
-        socket.on('status_update', (data) => {
-            document.getElementById('status-cam').className = data.camera_online ? 'status-dot online' : 'status-dot offline';
-            document.getElementById('status-faces').textContent = data.known_face_count;
+        socket.on('disconnect', () => {
+            isConnected = false;
+            document.getElementById('link-badge').className = 'live-signal-badge offline';
+            document.getElementById('link-text').textContent = 'LINK LOST';
+            document.getElementById('status-ind-ws').className = 'status-indicator offline';
+            document.getElementById('status-txt-ws').textContent = 'DISCONNECTED';
         });
-        
-        // Event log helper
-        function addEventToLog(event) {
-            const log = document.getElementById('event-log');
-            const row = document.createElement('div');
+
+        // Telemetry stream
+        socket.on('telemetry_update', (data) => {
+            lastTelemetry = data;
+            updateTelemetryDisplay(data);
+            renderHudOverlay(data);
+        });
+
+        // Detection Event Stream
+        socket.on('detection_event', (event) => {
+            appendEventLog(event);
+            if (event.action === 'IDENTIFIED') {
+                playLockChirp();
+            }
+        });
+
+        // Status Updates
+        socket.on('status_update', (data) => {
+            const camInd = document.getElementById('status-ind-cam');
+            const camTxt = document.getElementById('status-txt-cam');
+            if (data.camera_online) {
+                camInd.className = 'status-indicator online';
+                camTxt.textContent = 'ONLINE';
+            } else {
+                camInd.className = 'status-indicator warning';
+                camTxt.textContent = 'SIMULATED';
+            }
+            document.getElementById('badge-face-count').textContent = `${data.known_face_count} Persons`;
+        });
+
+        // Update gauges and side panel telemetry
+        function updateTelemetryDisplay(data) {
+            // Yaw & Pitch numerical
+            document.getElementById('val-yaw').textContent = `${data.yaw >= 0 ? '+' : ''}${data.yaw.toFixed(1)}°`;
+            document.getElementById('val-pitch').textContent = `${data.pitch >= 0 ? '+' : ''}${data.pitch.toFixed(1)}°`;
             
-            let colorClass = 'searching';
-            if(event.action === 'IDENTIFIED') colorClass = 'identified';
-            else if(event.action === 'LOST') colorClass = 'lost';
-            else if(event.action === 'TRACKING') colorClass = 'tracking';
+            // Reticle angles
+            document.getElementById('reticle-angles').textContent = 
+                `YAW: ${data.yaw >= 0 ? '+' : ''}${data.yaw.toFixed(1)}° | PITCH: ${data.pitch >= 0 ? '+' : ''}${data.pitch.toFixed(1)}°`;
+
+            // Needle gauges (Map -30°..+30° to -70°..+70° needle angle)
+            const yawDeg = Math.max(-75, Math.min(75, data.yaw * 2.5));
+            const pitchDeg = Math.max(-75, Math.min(75, data.pitch * 2.5));
+            document.getElementById('gauge-yaw-needle').style.transform = `translateX(-50%) rotate(${yawDeg}deg)`;
+            document.getElementById('gauge-pitch-needle').style.transform = `translateX(-50%) rotate(${pitchDeg}deg)`;
+
+            // Confidence
+            const confPct = Math.round(data.confidence * 100);
+            document.getElementById('val-conf-pct').textContent = `${confPct}%`;
+            document.getElementById('conf-meter-fill').style.width = `${confPct}%`;
+
+            // Bottom telemetry strip chips
+            document.getElementById('hud-cmd-chip').textContent = data.command;
+            document.getElementById('hud-target-chip').textContent = data.tracked_name || 'NONE';
+            document.getElementById('hud-conf-chip').textContent = `${confPct}%`;
+            document.getElementById('hud-fps-chip').textContent = data.fps;
+
+            // Tracking status indicator
+            const trackInd = document.getElementById('status-ind-track');
+            const trackTxt = document.getElementById('status-txt-track');
+            const vport = document.getElementById('viewport-card');
             
-            row.className = `event-row ${colorClass}`;
-            
-            // Format time HH:MM:SS
-            const d = new Date(event.timestamp * 1000);
-            const timeStr = d.toTimeString().split(' ')[0];
-            
-            row.innerHTML = `
-                <div class="event-time">${timeStr}</div>
-                <div class="event-details">
-                    <span class="event-name">${event.name}</span> — ${event.action}
-                    ${event.confidence ? `(${Math.round(event.confidence*100)}%)` : ''}
-                </div>
-            `;
-            
-            log.insertBefore(row, log.firstChild);
-            
-            // keep max 50 items
-            if(log.children.length > 50) {
-                log.removeChild(log.lastChild);
+            if (data.tracking_status) {
+                trackInd.className = 'status-indicator online';
+                trackTxt.textContent = 'LOCKED';
+                vport.classList.add('is-tracking');
+            } else {
+                trackInd.className = 'status-indicator warning';
+                trackTxt.textContent = 'SEARCHING';
+                vport.classList.remove('is-tracking');
+            }
+
+            // Directional Compass Highlight
+            updateDirectionalCompass(data.command);
+        }
+
+        // Highlight arrows on the directional navigator
+        function updateDirectionalCompass(cmd) {
+            const banner = document.getElementById('nav-banner');
+            banner.textContent = cmd;
+
+            const u = document.getElementById('arrow-u');
+            const d = document.getElementById('arrow-d');
+            const l = document.getElementById('arrow-l');
+            const r = document.getElementById('arrow-r');
+            const c = document.getElementById('compass-center-dot');
+
+            [u, d, l, r, c].forEach(el => el.classList.remove('active'));
+
+            if (cmd.includes('UP')) u.classList.add('active');
+            else if (cmd.includes('DOWN')) d.classList.add('active');
+            else if (cmd.includes('LEFT')) l.classList.add('active');
+            else if (cmd.includes('RIGHT')) r.classList.add('active');
+            else c.classList.add('active');
+        }
+
+        // Render Canvas HUD Overlay (Bounding box, lock brackets, motion trail)
+        const hudCanvas = document.getElementById('hud-canvas');
+        const ctx = hudCanvas.getContext('2d');
+        const lockBox = document.getElementById('target-lock-box');
+
+        function renderHudOverlay(data) {
+            const container = document.getElementById('hud-viewport');
+            const w = container.clientWidth;
+            const h = container.clientHeight;
+
+            if (hudCanvas.width !== w || hudCanvas.height !== h) {
+                hudCanvas.width = w;
+                hudCanvas.height = h;
+            }
+
+            ctx.clearRect(0, 0, w, h);
+
+            if (!hudSettings.hud) {
+                lockBox.style.display = 'none';
+                return;
+            }
+
+            // Draw Kalman Motion Trail on Canvas
+            if (data.trail && data.trail.length > 1) {
+                // Video aspect ratio mapping (assuming 640x480 source)
+                const sx = w / 640.0;
+                const sy = h / 480.0;
+
+                ctx.beginPath();
+                ctx.lineWidth = 2;
+                for (let i = 0; i < data.trail.length; i++) {
+                    const pt = data.trail[i];
+                    const px = pt[0] * sx;
+                    const py = pt[1] * sy;
+                    if (i === 0) ctx.moveTo(px, py);
+                    else ctx.lineTo(px, py);
+                }
+                const grad = ctx.createLinearGradient(0, 0, w, h);
+                grad.addColorStop(0, 'rgba(0, 212, 255, 0.1)');
+                grad.addColorStop(1, 'rgba(0, 255, 136, 0.8)');
+                ctx.strokeStyle = grad;
+                ctx.stroke();
+            }
+
+            // Position Target Lock Box DOM element
+            if (data.tracking_status && data.bbox) {
+                const sx = w / 640.0;
+                const sy = h / 480.0;
+                const bx = data.bbox[0] * sx;
+                const by = data.bbox[1] * sy;
+                const bw = data.bbox[2] * sx;
+                const bh = data.bbox[3] * sy;
+
+                lockBox.style.display = 'block';
+                lockBox.style.left = `${bx}px`;
+                lockBox.style.top = `${by}px`;
+                lockBox.style.width = `${bw}px`;
+                lockBox.style.height = `${bh}px`;
+
+                const isKnown = data.tracked_name && data.tracked_name !== 'Unknown' && data.tracked_name !== 'None';
+                lockBox.className = `target-lock-box ${isKnown ? 'target-known' : 'target-unknown'}`;
+
+                document.getElementById('target-pill-name').textContent = data.tracked_name || 'UNKNOWN';
+                document.getElementById('target-pill-score').textContent = `${Math.round(data.confidence * 100)}%`;
+                document.getElementById('target-meta').textContent = 
+                    `YAW: ${data.yaw >= 0 ? '+' : ''}${data.yaw.toFixed(1)}° | PITCH: ${data.pitch >= 0 ? '+' : ''}${data.pitch.toFixed(1)}°`;
+
+                // Sound trigger on new target lock
+                if (data.tracked_name !== lastLockedTarget && isKnown) {
+                    lastLockedTarget = data.tracked_name;
+                    playLockChirp();
+                }
+            } else {
+                lockBox.style.display = 'none';
+                lastLockedTarget = null;
             }
         }
-        
-        // API helpers
-        function sendCommand(cmd) {
-            fetch('/api/control', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({command: cmd})
-            }).catch(e => console.error(e));
+
+        // Event Log Stream
+        function appendEventLog(event) {
+            const stream = document.getElementById('log-stream');
+            const row = document.createElement('div');
+            
+            let typeClass = 'event-searching';
+            let icon = '🔍';
+            if (event.action === 'IDENTIFIED') {
+                typeClass = 'event-identified';
+                icon = '🎯';
+            } else if (event.action === 'LOST') {
+                typeClass = 'event-lost';
+                icon = '⚠️';
+            } else if (event.action === 'TRACKING') {
+                typeClass = 'event-tracking';
+                icon = '👁️';
+            }
+
+            row.className = `log-row ${typeClass}`;
+            const timeStr = new Date(event.timestamp * 1000).toLocaleTimeString();
+            const confStr = event.confidence ? ` [${Math.round(event.confidence * 100)}%]` : '';
+
+            row.innerHTML = `
+                <div class="log-time">${timeStr}</div>
+                <div class="log-icon">${icon}</div>
+                <div class="log-body">
+                    <strong>${event.name}</strong> &mdash; ${event.action}${confStr}
+                </div>
+            `;
+
+            stream.insertBefore(row, stream.firstChild);
+
+            // Cap at 60 items
+            if (stream.children.length > 60) {
+                stream.removeChild(stream.lastChild);
+            }
         }
-        
+
+        // Clear Logs
+        document.getElementById('btn-clear-logs').addEventListener('click', () => {
+            document.getElementById('log-stream').innerHTML = '';
+        });
+
+        // Face Gallery Management
         function loadFaces() {
             fetch('/api/faces')
                 .then(r => r.json())
                 .then(faces => {
-                    const grid = document.getElementById('face-gallery-grid');
-                    // keep only the add button
-                    const btn = document.getElementById('add-face-btn');
+                    const grid = document.getElementById('gallery-grid');
+                    const addBtn = document.getElementById('btn-open-add-modal');
                     grid.innerHTML = '';
-                    grid.appendChild(btn);
-                    
+                    grid.appendChild(addBtn);
+
+                    document.getElementById('badge-face-count').textContent = `${faces.length} Persons`;
+
                     faces.forEach(f => {
                         const card = document.createElement('div');
-                        card.className = 'face-card';
+                        card.className = 'target-card';
                         card.innerHTML = `
-                            <button class="delete-btn" onclick="deleteFace('${f.name}')">✕</button>
-                            <img class="face-img" src="data:image/jpeg;base64,${f.thumbnail}" alt="${f.name}">
-                            <div class="face-name">${f.name}</div>
+                            <button class="target-del-btn" onclick="deleteTargetFace('${f.name}')" title="Delete Profile">&times;</button>
+                            <div class="target-avatar">
+                                <img src="data:image/jpeg;base64,${f.thumbnail}" alt="${f.name}">
+                            </div>
+                            <div class="target-card-info">
+                                <div class="target-card-name">${f.name}</div>
+                                <div class="target-card-role">AUTHORIZED TARGET</div>
+                            </div>
                         `;
-                        grid.insertBefore(card, btn);
+                        grid.insertBefore(card, addBtn);
                     });
                 })
                 .catch(e => console.error(e));
         }
-        
-        function deleteFace(name) {
-            if(confirm(`Remove ${name}?`)) {
-                fetch(`/api/faces/${name}`, {method: 'DELETE'})
+
+        function deleteTargetFace(name) {
+            if (confirm(`Are you sure you want to remove ${name} from recognized roster?`)) {
+                fetch(`/api/faces/${encodeURIComponent(name)}`, { method: 'DELETE' })
                     .then(() => loadFaces())
                     .catch(e => console.error(e));
             }
         }
-        
-        function loadInitialEvents() {
+
+        function loadInitialLogs() {
             fetch('/api/events')
                 .then(r => r.json())
                 .then(events => {
-                    const log = document.getElementById('event-log');
-                    log.innerHTML = ''; // clear
-                    // Events are likely newest first from API, let's render them in reverse so older is at bottom
-                    events.reverse().forEach(e => addEventToLog(e));
-                })
-                .catch(e => console.error(e));
-        }
-        
-        function loadStatus() {
-            fetch('/api/status')
-                .then(r => r.json())
-                .then(s => {
-                    document.getElementById('status-cam').className = s.camera_online ? 'status-dot online' : 'status-dot offline';
-                    document.getElementById('status-faces').textContent = s.known_face_count;
+                    const stream = document.getElementById('log-stream');
+                    stream.innerHTML = '';
+                    events.reverse().forEach(e => appendEventLog(e));
                 })
                 .catch(e => console.error(e));
         }
 
-        // Control handlers
-        document.querySelectorAll('.d-btn').forEach(btn => {
-            btn.addEventListener('mousedown', () => sendCommand(btn.dataset.cmd));
-            btn.addEventListener('mouseup', () => sendCommand('S'));
-            btn.addEventListener('mouseleave', () => sendCommand('S')); // if mouse leaves while pressing
+        function loadSystemStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(s => {
+                    const camInd = document.getElementById('status-ind-cam');
+                    const camTxt = document.getElementById('status-txt-cam');
+                    if (s.camera_online) {
+                        camInd.className = 'status-indicator online';
+                        camTxt.textContent = 'ONLINE';
+                    } else {
+                        camInd.className = 'status-indicator warning';
+                        camTxt.textContent = 'SIMULATED';
+                    }
+                    document.getElementById('badge-face-count').textContent = `${s.known_face_count} Persons`;
+                })
+                .catch(e => console.error(e));
+        }
+
+        // Robot Drive Commands
+        function sendRobotCommand(cmd) {
+            fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd })
+            }).catch(e => console.error(e));
+            playTacticalBeep(600, 0.04, 'square');
+        }
+
+        // D-Pad Button Bindings
+        document.querySelectorAll('.dpad-btn').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                sendRobotCommand(btn.dataset.cmd);
+                btn.classList.add('active');
+            });
+            btn.addEventListener('mouseup', () => {
+                sendRobotCommand('S');
+                btn.classList.remove('active');
+            });
+            btn.addEventListener('mouseleave', () => {
+                if (btn.classList.contains('active')) {
+                    sendRobotCommand('S');
+                    btn.classList.remove('active');
+                }
+            });
         });
-        
-        // Keyboard controls
-        const keyMap = {'w': 'F', 'a': 'L', 's': 'B', 'd': 'R', ' ': 'S', 'ArrowUp':'F', 'ArrowDown':'B', 'ArrowLeft':'L', 'ArrowRight':'R'};
-        let activeKey = null;
-        
+
+        // Keyboard Controls
+        const driveKeyMap = {
+            'w': 'F', 'arrowup': 'F',
+            'a': 'L', 'arrowleft': 'L',
+            's': 'B', 'arrowdown': 'B',
+            'd': 'R', 'arrowright': 'R',
+            ' ': 'S'
+        };
+        let activePressedKey = null;
+
         window.addEventListener('keydown', (e) => {
-            if(document.activeElement.tagName === 'INPUT') return; // ignore if typing
+            if (document.activeElement.tagName === 'INPUT') return;
             const k = e.key.toLowerCase();
-            if(keyMap[k] && k !== activeKey) {
-                activeKey = k;
-                sendCommand(keyMap[k]);
-                // visual feedback
-                if(k===' ') document.querySelector('.d-btn.stop').classList.add('active');
+            
+            // Fullscreen shortcut (F)
+            if (k === 'f' && !activePressedKey) {
+                toggleFullscreenHud();
+                return;
+            }
+
+            if (driveKeyMap[k] && k !== activePressedKey) {
+                activePressedKey = k;
+                const cmd = driveKeyMap[k];
+                sendRobotCommand(cmd);
+                
+                // Visual feedback on dpad
+                const btn = document.querySelector(`.dpad-btn[data-cmd="${cmd}"]`);
+                if (btn) btn.classList.add('active');
             }
         });
-        
+
         window.addEventListener('keyup', (e) => {
-            if(document.activeElement.tagName === 'INPUT') return;
+            if (document.activeElement.tagName === 'INPUT') return;
             const k = e.key.toLowerCase();
-            if(keyMap[k]) {
-                activeKey = null;
-                sendCommand('S');
+            if (driveKeyMap[k]) {
+                activePressedKey = null;
+                sendRobotCommand('S');
+                document.querySelectorAll('.dpad-btn').forEach(b => b.classList.remove('active'));
             }
         });
-        
-        // Modal handlers
-        const modal = document.getElementById('add-modal');
-        const dropZone = document.getElementById('drop-zone');
-        const fileInput = document.getElementById('file-input');
-        const preview = document.getElementById('drop-preview');
-        let currentFile = null;
-        
-        document.getElementById('add-face-btn').addEventListener('click', () => {
-            modal.classList.add('active');
-            document.getElementById('face-name').value = '';
-            preview.style.display = 'none';
-            currentFile = null;
+
+        // Fullscreen HUD Mode Toggle
+        function toggleFullscreenHud() {
+            const vport = document.getElementById('viewport-card');
+            if (!document.fullscreenElement) {
+                vport.requestFullscreen().catch(err => {
+                    vport.classList.toggle('hud-expanded-mode');
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        document.getElementById('btn-fullscreen-toggle').addEventListener('click', toggleFullscreenHud);
+
+        // HUD Viewport Toggles (HUD, Grid, Reticle, Audio)
+        document.getElementById('btn-toggle-hud').addEventListener('click', function() {
+            hudSettings.hud = !hudSettings.hud;
+            this.classList.toggle('active', hudSettings.hud);
+            document.getElementById('hud-canvas').style.display = hudSettings.hud ? 'block' : 'none';
+            document.getElementById('target-lock-box').style.display = hudSettings.hud ? 'block' : 'none';
         });
-        
-        document.getElementById('close-modal').addEventListener('click', () => {
-            modal.classList.remove('active');
+
+        document.getElementById('btn-toggle-grid').addEventListener('click', function() {
+            hudSettings.grid = !hudSettings.grid;
+            this.classList.toggle('active', hudSettings.grid);
+            document.getElementById('hud-grid').style.display = hudSettings.grid ? 'block' : 'none';
+            document.getElementById('hud-scanlines').style.display = hudSettings.grid ? 'block' : 'none';
         });
-        
-        dropZone.addEventListener('click', () => fileInput.click());
-        
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
+
+        document.getElementById('btn-toggle-reticle').addEventListener('click', function() {
+            hudSettings.reticle = !hudSettings.reticle;
+            this.classList.toggle('active', hudSettings.reticle);
+            document.getElementById('hud-center-reticle').style.display = hudSettings.reticle ? 'block' : 'none';
         });
-        
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
+
+        document.getElementById('btn-toggle-audio').addEventListener('click', function() {
+            hudSettings.audio = !hudSettings.audio;
+            this.classList.toggle('active', hudSettings.audio);
+            if (hudSettings.audio) playTacticalBeep(900, 0.08);
         });
-        
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            if(e.dataTransfer.files.length) {
-                handleFile(e.dataTransfer.files[0]);
+
+        // Snapshot Frame Capture
+        document.getElementById('btn-snapshot').addEventListener('click', () => {
+            const videoImg = document.getElementById('video-stream');
+            const canvas = document.createElement('canvas');
+            canvas.width = videoImg.naturalWidth || 640;
+            canvas.height = videoImg.naturalHeight || 480;
+            const ctx2 = canvas.getContext('2d');
+            ctx2.drawImage(videoImg, 0, 0, canvas.width, canvas.height);
+
+            const link = document.createElement('a');
+            link.download = `robot-hud-capture-${Date.now()}.jpg`;
+            link.href = canvas.toDataURL('image/jpeg');
+            link.click();
+            playTacticalBeep(1200, 0.12, 'sawtooth');
+        });
+
+        // Camera Source Switcher
+        const cameraSelect = document.getElementById('camera-source-select');
+        const videoStream = document.getElementById('video-stream');
+        const webrtcVideo = document.getElementById('webrtc-video');
+        const sourceBadge = document.getElementById('source-badge');
+
+        cameraSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (val === 'server') {
+                stopWebRtc();
+                videoStream.style.display = 'block';
+                videoStream.src = '/video_feed';
+                webrtcVideo.style.display = 'none';
+                sourceBadge.textContent = 'ROBOT CAM';
+            } else if (val === 'webrtc') {
+                startWebRtc();
+            } else if (val === 'ipcam') {
+                document.getElementById('ipcam-modal').classList.add('active');
             }
         });
-        
+
+        function startWebRtc() {
+            navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+                .then(stream => {
+                    webRtcStream = stream;
+                    webrtcVideo.srcObject = stream;
+                    webrtcVideo.style.display = 'block';
+                    videoStream.style.display = 'none';
+                    sourceBadge.textContent = 'WEBRTC CAM';
+                })
+                .catch(err => {
+                    alert("Could not access browser webcam: " + err.message);
+                    cameraSelect.value = 'server';
+                });
+        }
+
+        function stopWebRtc() {
+            if (webRtcStream) {
+                webRtcStream.getTracks().forEach(track => track.stop());
+                webRtcStream = null;
+            }
+        }
+
+        // IP Cam Modal
+        document.getElementById('btn-close-ipcam-modal').addEventListener('click', () => {
+            document.getElementById('ipcam-modal').classList.remove('active');
+        });
+        document.getElementById('btn-cancel-ipcam').addEventListener('click', () => {
+            document.getElementById('ipcam-modal').classList.remove('active');
+        });
+        document.getElementById('btn-connect-ipcam').addEventListener('click', () => {
+            const url = document.getElementById('ipcam-url-input').value.trim();
+            if (url) {
+                stopWebRtc();
+                videoStream.src = url;
+                videoStream.style.display = 'block';
+                webrtcVideo.style.display = 'none';
+                sourceBadge.textContent = 'IP CAM';
+            }
+            document.getElementById('ipcam-modal').classList.remove('active');
+        });
+
+        // Face Registration Modal Handlers
+        const addModal = document.getElementById('add-modal');
+        const faceDropZone = document.getElementById('face-drop-zone');
+        const fileInput = document.getElementById('target-file-input');
+        const uploadPreview = document.getElementById('upload-preview');
+        const dropPrompt = document.getElementById('drop-prompt');
+        let selectedFile = null;
+
+        document.getElementById('btn-open-add-modal').addEventListener('click', () => {
+            addModal.classList.add('active');
+            document.getElementById('input-target-name').value = '';
+            uploadPreview.style.display = 'none';
+            dropPrompt.style.display = 'flex';
+            selectedFile = null;
+        });
+
+        document.getElementById('btn-close-modal').addEventListener('click', () => addModal.classList.remove('active'));
+        document.getElementById('btn-cancel-modal').addEventListener('click', () => addModal.classList.remove('active'));
+
+        faceDropZone.addEventListener('click', () => fileInput.click());
         fileInput.addEventListener('change', (e) => {
-            if(e.target.files.length) handleFile(e.target.files[0]);
+            if (e.target.files.length) handleSelectedImage(e.target.files[0]);
         });
-        
-        function handleFile(file) {
-            if(!file.type.startsWith('image/')) return;
-            currentFile = file;
+
+        faceDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            faceDropZone.classList.add('dragover');
+        });
+        faceDropZone.addEventListener('dragleave', () => faceDropZone.classList.remove('dragover'));
+        faceDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            faceDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleSelectedImage(e.dataTransfer.files[0]);
+        });
+
+        function handleSelectedImage(file) {
+            if (!file.type.startsWith('image/')) {
+                alert("Please select a valid image file.");
+                return;
+            }
+            selectedFile = file;
             const reader = new FileReader();
             reader.onload = (e) => {
-                preview.src = e.target.result;
-                preview.style.display = 'block';
+                uploadPreview.src = e.target.result;
+                uploadPreview.style.display = 'block';
+                dropPrompt.style.display = 'none';
             };
             reader.readAsDataURL(file);
         }
-        
-        document.getElementById('submit-face').addEventListener('click', () => {
-            const name = document.getElementById('face-name').value.trim();
-            if(!name || !currentFile) {
-                alert("Please provide both name and image");
+
+        document.getElementById('btn-submit-face').addEventListener('click', () => {
+            const name = document.getElementById('input-target-name').value.trim();
+            if (!name || !selectedFile) {
+                alert("Please specify a target name and upload a reference photo.");
                 return;
             }
-            
+
             const formData = new FormData();
             formData.append('name', name);
-            formData.append('image', currentFile);
-            
+            formData.append('image', selectedFile);
+
+            const submitBtn = document.getElementById('btn-submit-face');
+            submitBtn.textContent = 'Enrolling...';
+            submitBtn.disabled = true;
+
             fetch('/api/faces', {
                 method: 'POST',
                 body: formData
             })
             .then(r => r.json())
             .then(res => {
-                if(res.success) {
-                    modal.classList.remove('active');
+                submitBtn.textContent = 'Save to Database';
+                submitBtn.disabled = false;
+                if (res.success) {
+                    addModal.classList.remove('active');
                     loadFaces();
+                    playLockChirp();
                 } else {
-                    alert("Error: " + res.error);
+                    alert("Enrollment failed: " + res.error);
                 }
             })
-            .catch(e => console.error(e));
+            .catch(err => {
+                submitBtn.textContent = 'Save to Database';
+                submitBtn.disabled = false;
+                alert("Network error: " + err);
+            });
         });
-        
-        // Initial setup
+
+        // Initialize Everything
         window.addEventListener('DOMContentLoaded', () => {
             loadFaces();
-            loadInitialEvents();
-            loadStatus();
+            loadInitialLogs();
+            loadSystemStatus();
         });
-        
     </script>
 </body>
 </html>
