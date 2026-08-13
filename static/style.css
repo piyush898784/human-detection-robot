@@ -645,7 +645,6 @@ body {
     pointer-events: none;
     z-index: 20;
     display: none;
-    transition: all 0.05s ease-out;
 }
 
 .lock-bracket {
@@ -815,7 +814,7 @@ body {
     background: var(--hud-cyan);
     transform-origin: bottom center;
     transform: translateX(-50%) rotate(0deg);
-    transition: transform 0.1s ease-out;
+    transition: transform 0.03s linear;
     box-shadow: 0 0 4px var(--hud-cyan);
 }
 
