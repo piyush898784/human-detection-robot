@@ -906,14 +906,30 @@
             }
         });
 
+        let webrtcProcessInterval = null;
+        const webrtcCanvas = document.createElement('canvas');
+        webrtcCanvas.width = 320;
+        webrtcCanvas.height = 240;
+        const webrtcCtx = webrtcCanvas.getContext('2d');
+
         function startWebRtc() {
-            navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
+            navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 30 } } })
                 .then(stream => {
                     webRtcStream = stream;
                     webrtcVideo.srcObject = stream;
                     webrtcVideo.style.display = 'block';
                     videoStream.style.display = 'none';
-                    sourceBadge.textContent = 'WEBRTC CAM';
+                    sourceBadge.textContent = 'WEBRTC CAM (60 FPS)';
+                    
+                    // Stream client frames to server for real-time tracking
+                    if (webrtcProcessInterval) clearInterval(webrtcProcessInterval);
+                    webrtcProcessInterval = setInterval(() => {
+                        if (webrtcVideo.videoWidth > 0 && isConnected) {
+                            webrtcCtx.drawImage(webrtcVideo, 0, 0, 320, 240);
+                            const b64 = webrtcCanvas.toDataURL('image/jpeg', 0.6);
+                            socket.emit('process_browser_frame', b64);
+                        }
+                    }, 50); // 20 Hz processing rate
                 })
                 .catch(err => {
                     alert("Could not access browser webcam: " + err.message);
@@ -922,6 +938,10 @@
         }
 
         function stopWebRtc() {
+            if (webrtcProcessInterval) {
+                clearInterval(webrtcProcessInterval);
+                webrtcProcessInterval = null;
+            }
             if (webRtcStream) {
                 webRtcStream.getTracks().forEach(track => track.stop());
                 webRtcStream = null;

@@ -830,6 +830,23 @@ def generate_frames():
 # FLASK ROUTES
 # ─────────────────────────────────────────────
 
+@socketio.on('process_browser_frame')
+def handle_browser_frame(data):
+    """Processes frames sent from browser client when in WebRTC mode with zero camera latency."""
+    try:
+        if isinstance(data, str):
+            if ',' in data:
+                data = data.split(',', 1)[1]
+            img_bytes = base64.b64decode(data)
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is not None:
+                engine.process_frame(frame)
+                emit('telemetry_update', engine.get_telemetry())
+    except Exception:
+        pass
+
+
 @app.route('/')
 def index():
     return render_template('dashboard.html')
