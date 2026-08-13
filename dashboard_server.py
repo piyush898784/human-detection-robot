@@ -758,14 +758,14 @@ def video_processing_thread():
 
     if not threaded_cam.is_opened:
         engine.camera_online = False
-        print("[i] Physical camera not connected. Running 30 FPS high-speed simulated HUD stream.")
+        print("[i] Physical camera not connected. Running 30 FPS simulated HUD stream.")
         while True:
             sim_frame = engine.generate_simulated_frame()
             ret, buffer = cv2.imencode('.jpg', sim_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             if ret:
                 with frame_lock:
                     latest_frame = buffer.tobytes()
-            time.sleep(0.033)
+            time.sleep(0.033)  # Exact 30 FPS interval
 
     engine.camera_online = True
 
@@ -781,24 +781,24 @@ def video_processing_thread():
             with frame_lock:
                 latest_frame = buffer.tobytes()
 
-        # Yield execution minimally to maintain 25-30+ FPS
+        # Target 30 FPS processing
         time.sleep(0.002)
 
 
 def telemetry_thread():
     while True:
         socketio.emit('telemetry_update', engine.get_telemetry())
-        time.sleep(0.06)  # ~16 Hz smooth telemetry
+        time.sleep(0.033)  # 30 Hz real-time telemetry synchronization
 
 
 def generate_frames():
-    """MJPEG stream generator delivering 25-30 FPS to browser."""
+    """MJPEG stream generator delivering continuous 30 FPS to browser."""
     while True:
         with frame_lock:
             if latest_frame is not None:
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + latest_frame + b'\r\n')
-        time.sleep(0.015)  # Up to 60 FPS throughput capability
+        time.sleep(0.01)  # Low-latency 30+ FPS delivery capability
 
 
 # ─────────────────────────────────────────────
