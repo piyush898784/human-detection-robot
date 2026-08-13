@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Detection Robot — Command Center</title>
+    <meta name="description" content="Real-time command center for the autonomous human-following robot">
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <header class="header">
+        <div class="logo-container">
+            <h1 class="logo-title">ROBOT COMMAND CENTER</h1>
+        </div>
+        <div class="live-badge">
+            <div class="pulse-dot"></div>
+            LIVE
+        </div>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="main-area">
+            <div class="card video-card">
+                <div class="card-header">
+                    <span class="card-icon">👁</span>
+                    <h2>Camera Feed</h2>
+                </div>
+                <div class="video-container" id="video-container">
+                    <img id="video-feed" src="/video_feed" alt="Video Feed" onerror="this.src=''; this.alt='Camera Offline';">
+                </div>
+            </div>
+
+            <div class="side-panel">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">📊</span>
+                        <h2>Telemetry</h2>
+                    </div>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item">
+                            <div class="gauge-container">
+                                <div class="gauge-arc"></div>
+                                <div class="gauge-needle" id="yaw-needle"></div>
+                            </div>
+                            <div class="telemetry-label">Yaw Angle</div>
+                            <div class="telemetry-value" id="yaw-val">0.0°</div>
+                        </div>
+                        <div class="telemetry-item">
+                            <div class="gauge-container">
+                                <div class="gauge-arc"></div>
+                                <div class="gauge-needle" id="pitch-needle"></div>
+                            </div>
+                            <div class="telemetry-label">Pitch Angle</div>
+                            <div class="telemetry-value" id="pitch-val">0.0°</div>
+                        </div>
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">FPS</div>
+                            <div class="telemetry-value" id="fps-val">0</div>
+                        </div>
+                        <div class="telemetry-item">
+                            <div class="telemetry-label">Target</div>
+                            <div class="telemetry-value" id="target-val" style="font-size: 1.2rem;">None</div>
+                        </div>
+                    </div>
+                    <div class="confidence-container">
+                        <div class="confidence-label">
+                            <span>Confidence</span>
+                            <span id="confidence-text">0%</span>
+                        </div>
+                        <div class="confidence-bar-bg">
+                            <div class="confidence-bar" id="confidence-bar"></div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 15px; text-align: center;">
+                        <div class="telemetry-label">Current Command</div>
+                        <div class="telemetry-value" id="command-val" style="color: var(--accent-amber);">CENTERED</div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 20px;">
+                    <div class="card-header">
+                        <span class="card-icon">🎮</span>
+                        <h2>Robot Control</h2>
+                    </div>
+                    <div class="control-panel">
+                        <div class="d-pad">
+                            <button class="d-btn forward" data-cmd="F">▲</button>
+                            <button class="d-btn left" data-cmd="L">◀</button>
+                            <button class="d-btn stop" data-cmd="S">■</button>
+                            <button class="d-btn right" data-cmd="R">▶</button>
+                            <button class="d-btn backward" data-cmd="B">▼</button>
+                        </div>
+                        <div class="keyboard-hints">
+                            <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> to move &bull; <kbd>Space</kbd> to stop
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-area">
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">👥</span>
+                    <h2>Face Gallery</h2>
+                </div>
+                <div class="gallery-container">
+                    <div class="face-gallery-grid" id="face-gallery-grid">
+                        <button class="add-face-btn" id="add-face-btn">
+                            <span>+</span>
+                            Add Face
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-icon">📋</span>
+                    <h2>Detection Event Log</h2>
+                </div>
+                <div class="event-log" id="event-log">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="status-footer">
+        <div class="status-indicators">
+            <div class="status-item">
+                <div class="status-dot" id="status-cam"></div>
+                Camera
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="status-track"></div>
+                Tracking Active
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="status-ws"></div>
+                WebSocket
+            </div>
+            <div class="status-item">
+                Known Faces: <span id="status-faces">0</span>
+            </div>
+        </div>
+        <div>v1.0.0 &bull; Human Detection System</div>
+    </footer>
+
+    <!-- Add Face Modal -->
+    <div class="modal-overlay" id="add-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Known Face</h2>
+                <button class="modal-close" id="close-modal">&times;</button>
+            </div>
+            <div class="form-group">
+                <label for="face-name">Person's Name</label>
+                <input type="text" id="face-name" class="form-input" placeholder="e.g. John Doe">
+            </div>
+            <div class="form-group">
+                <label>Face Image (Clear, well-lit)</label>
+                <div class="drop-zone" id="drop-zone">
+                    <div class="drop-zone-text">Drag & Drop image here or click to browse</div>
+                    <img id="drop-preview" class="drop-zone-img" src="" alt="Preview">
+                    <input type="file" id="file-input" style="display: none" accept="image/*">
+                </div>
+            </div>
+            <button class="btn-primary" id="submit-face">Add Face</button>
+        </div>
+    </div>
+
+    <script>
+        // Socket.IO connection
+        const socket = io();
+        
+        let isConnected = false;
+        
+        socket.on('connect', () => {
+            isConnected = true;
+            document.getElementById('status-ws').className = 'status-dot online';
+        });
+        
+        socket.on('disconnect', () => {
+            isConnected = false;
+            document.getElementById('status-ws').className = 'status-dot offline';
+        });
+        
+        // Telemetry updates
+        socket.on('telemetry_update', (data) => {
+            // Yaw & Pitch
+            document.getElementById('yaw-val').textContent = data.yaw.toFixed(1) + '°';
+            document.getElementById('pitch-val').textContent = data.pitch.toFixed(1) + '°';
+            
+            // Map -30 to 30 degrees to needle rotation (-90 to 90 for full 180 semi-circle, wait gauge is 90 deg? let's do -45 to 45)
+            // If gauge arc is 180deg (-90 to 90)
+            let yawRot = Math.max(-90, Math.min(90, data.yaw * 3));
+            let pitchRot = Math.max(-90, Math.min(90, data.pitch * 3));
+            document.getElementById('yaw-needle').style.transform = `translateX(-50%) rotate(${yawRot}deg)`;
+            document.getElementById('pitch-needle').style.transform = `translateX(-50%) rotate(${pitchRot}deg)`;
+            
+            // FPS & Target
+            document.getElementById('fps-val').textContent = data.fps;
+            document.getElementById('target-val').textContent = data.tracked_name;
+            
+            // Confidence
+            const conf = Math.round(data.confidence * 100);
+            document.getElementById('confidence-text').textContent = conf + '%';
+            document.getElementById('confidence-bar').style.width = conf + '%';
+            
+            // Command
+            document.getElementById('command-val').textContent = data.command;
+            
+            // Tracking status
+            const vCont = document.getElementById('video-container');
+            const tDot = document.getElementById('status-track');
+            if(data.tracking_status) {
+                vCont.classList.add('tracking');
+                tDot.className = 'status-dot online';
+            } else {
+                vCont.classList.remove('tracking');
+                tDot.className = 'status-dot offline';
+            }
+        });
+        
+        // Detection events
+        socket.on('detection_event', (event) => {
+            addEventToLog(event);
+        });
+
+        // Status updates
+        socket.on('status_update', (data) => {
+            document.getElementById('status-cam').className = data.camera_online ? 'status-dot online' : 'status-dot offline';
+            document.getElementById('status-faces').textContent = data.known_face_count;
+        });
+        
+        // Event log helper
+        function addEventToLog(event) {
+            const log = document.getElementById('event-log');
+            const row = document.createElement('div');
+            
+            let colorClass = 'searching';
+            if(event.action === 'IDENTIFIED') colorClass = 'identified';
+            else if(event.action === 'LOST') colorClass = 'lost';
+            else if(event.action === 'TRACKING') colorClass = 'tracking';
+            
+            row.className = `event-row ${colorClass}`;
+            
+            // Format time HH:MM:SS
+            const d = new Date(event.timestamp * 1000);
+            const timeStr = d.toTimeString().split(' ')[0];
+            
+            row.innerHTML = `
+                <div class="event-time">${timeStr}</div>
+                <div class="event-details">
+                    <span class="event-name">${event.name}</span> — ${event.action}
+                    ${event.confidence ? `(${Math.round(event.confidence*100)}%)` : ''}
+                </div>
+            `;
+            
+            log.insertBefore(row, log.firstChild);
+            
+            // keep max 50 items
+            if(log.children.length > 50) {
+                log.removeChild(log.lastChild);
+            }
+        }
+        
+        // API helpers
+        function sendCommand(cmd) {
+            fetch('/api/control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: cmd})
+            }).catch(e => console.error(e));
+        }
+        
+        function loadFaces() {
+            fetch('/api/faces')
+                .then(r => r.json())
+                .then(faces => {
+                    const grid = document.getElementById('face-gallery-grid');
+                    // keep only the add button
+                    const btn = document.getElementById('add-face-btn');
+                    grid.innerHTML = '';
+                    grid.appendChild(btn);
+                    
+                    faces.forEach(f => {
+                        const card = document.createElement('div');
+                        card.className = 'face-card';
+                        card.innerHTML = `
+                            <button class="delete-btn" onclick="deleteFace('${f.name}')">✕</button>
+                            <img class="face-img" src="data:image/jpeg;base64,${f.thumbnail}" alt="${f.name}">
+                            <div class="face-name">${f.name}</div>
+                        `;
+                        grid.insertBefore(card, btn);
+                    });
+                })
+                .catch(e => console.error(e));
+        }
+        
+        function deleteFace(name) {
+            if(confirm(`Remove ${name}?`)) {
+                fetch(`/api/faces/${name}`, {method: 'DELETE'})
+                    .then(() => loadFaces())
+                    .catch(e => console.error(e));
+            }
+        }
+        
+        function loadInitialEvents() {
+            fetch('/api/events')
+                .then(r => r.json())
+                .then(events => {
+                    const log = document.getElementById('event-log');
+                    log.innerHTML = ''; // clear
+                    // Events are likely newest first from API, let's render them in reverse so older is at bottom
+                    events.reverse().forEach(e => addEventToLog(e));
+                })
+                .catch(e => console.error(e));
+        }
+        
+        function loadStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(s => {
+                    document.getElementById('status-cam').className = s.camera_online ? 'status-dot online' : 'status-dot offline';
+                    document.getElementById('status-faces').textContent = s.known_face_count;
+                })
+                .catch(e => console.error(e));
+        }
+
+        // Control handlers
+        document.querySelectorAll('.d-btn').forEach(btn => {
+            btn.addEventListener('mousedown', () => sendCommand(btn.dataset.cmd));
+            btn.addEventListener('mouseup', () => sendCommand('S'));
+            btn.addEventListener('mouseleave', () => sendCommand('S')); // if mouse leaves while pressing
+        });
+        
+        // Keyboard controls
+        const keyMap = {'w': 'F', 'a': 'L', 's': 'B', 'd': 'R', ' ': 'S', 'ArrowUp':'F', 'ArrowDown':'B', 'ArrowLeft':'L', 'ArrowRight':'R'};
+        let activeKey = null;
+        
+        window.addEventListener('keydown', (e) => {
+            if(document.activeElement.tagName === 'INPUT') return; // ignore if typing
+            const k = e.key.toLowerCase();
+            if(keyMap[k] && k !== activeKey) {
+                activeKey = k;
+                sendCommand(keyMap[k]);
+                // visual feedback
+                if(k===' ') document.querySelector('.d-btn.stop').classList.add('active');
+            }
+        });
+        
+        window.addEventListener('keyup', (e) => {
+            if(document.activeElement.tagName === 'INPUT') return;
+            const k = e.key.toLowerCase();
+            if(keyMap[k]) {
+                activeKey = null;
+                sendCommand('S');
+            }
+        });
+        
+        // Modal handlers
+        const modal = document.getElementById('add-modal');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const preview = document.getElementById('drop-preview');
+        let currentFile = null;
+        
+        document.getElementById('add-face-btn').addEventListener('click', () => {
+            modal.classList.add('active');
+            document.getElementById('face-name').value = '';
+            preview.style.display = 'none';
+            currentFile = null;
+        });
+        
+        document.getElementById('close-modal').addEventListener('click', () => {
+            modal.classList.remove('active');
+        });
+        
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if(e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            if(e.target.files.length) handleFile(e.target.files[0]);
+        });
+        
+        function handleFile(file) {
+            if(!file.type.startsWith('image/')) return;
+            currentFile = file;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.src = e.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        document.getElementById('submit-face').addEventListener('click', () => {
+            const name = document.getElementById('face-name').value.trim();
+            if(!name || !currentFile) {
+                alert("Please provide both name and image");
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('image', currentFile);
+            
+            fetch('/api/faces', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(res => {
+                if(res.success) {
+                    modal.classList.remove('active');
+                    loadFaces();
+                } else {
+                    alert("Error: " + res.error);
+                }
+            })
+            .catch(e => console.error(e));
+        });
+        
+        // Initial setup
+        window.addEventListener('DOMContentLoaded', () => {
+            loadFaces();
+            loadInitialEvents();
+            loadStatus();
+        });
+        
+    </script>
+</body>
+</html>
