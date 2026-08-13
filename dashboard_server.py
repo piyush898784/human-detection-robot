@@ -11,7 +11,7 @@ import base64
 import math
 from datetime import datetime
 from collections import deque
-from threading import Thread, Lock
+from threading import Thread, Lock, Condition
 from flask import Flask, render_template, Response, request, jsonify
 from flask_socketio import SocketIO, emit
 
@@ -40,10 +40,29 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'robot-hud-secret-key-2026'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# Shared streaming variables (Event-synchronized to eliminate network buffer lag)
-import threading
-frame_condition = threading.Condition()
-latest_frame = None
+# ─────────────────────────────────────────────
+# REAL-TIME BROADCAST ENGINE (ZERO-LATENCY)
+# ─────────────────────────────────────────────
+class FrameBroadcaster:
+    def __init__(self):
+        self.condition = Condition()
+        self.frame_bytes = None
+        self.frame_id = 0
+
+    def update(self, frame_bytes):
+        with self.condition:
+            self.frame_bytes = frame_bytes
+            self.frame_id += 1
+            self.condition.notify_all()
+
+    def get_latest(self, last_seen_id=0, timeout=0.04):
+        with self.condition:
+            if self.frame_id == last_seen_id:
+                self.condition.wait(timeout=timeout)
+            return self.frame_bytes, self.frame_id
+
+
+broadcaster = FrameBroadcaster()
 
 # Colors (BGR for OpenCV)
 C_KNOWN   = (0, 255, 136)      # Neon Green
@@ -56,7 +75,7 @@ C_DARK    = (15, 15, 25)
 
 
 # ─────────────────────────────────────────────
-# HIGH-SPEED HUD DRAWING HELPERS (IN-PLACE ROI)
+# ULTRA-FAST HUD DRAWING HELPERS (IN-PLACE ROI)
 # ─────────────────────────────────────────────
 
 def hud_panel(frame, x, y, w, h, alpha=0.60, color=C_DARK):
@@ -80,25 +99,14 @@ def corner_brackets(frame, x1, y1, x2, y2, color, t=2, seg=16):
     if x2 <= x1 or y2 <= y1:
         return
 
-    # Main sharp corners
+    # Sharp tactile corners
     for px, py, dx, dy in [(x1, y1, 1, 1), (x2, y1, -1, 1),
                            (x1, y2, 1, -1), (x2, y2, -1, -1)]:
         cv2.line(frame, (px, py), (px + dx * seg, py), color, t, cv2.LINE_AA)
         cv2.line(frame, (px, py), (px, py + dy * seg), color, t, cv2.LINE_AA)
 
-    # Dashed perimeter
-    for p1, p2 in [((x1, y1), (x2, y1)), ((x1, y2), (x2, y2)),
-                   ((x1, y1), (x1, y2)), ((x2, y1), (x2, y2))]:
-        d = int(math.hypot(p2[0] - p1[0], p2[1] - p1[1]))
-        if d > 0:
-            for i in range(0, d, 10):
-                r = i / float(d)
-                px = int(p1[0] * (1 - r) + p2[0] * r)
-                py = int(p1[1] * (1 - r) + p2[1] * r)
-                cv2.circle(frame, (px, py), 1, color, -1)
 
-
-def crosshair(frame, cx, cy, sz=24, color=C_CYAN):
+def crosshair(frame, cx, cy, sz=22, color=C_CYAN):
     """Draw tactical center reticle."""
     cx, cy = int(cx), int(cy)
     cv2.line(frame, (cx - sz, cy), (cx - 6, cy), color, 1, cv2.LINE_AA)
@@ -151,11 +159,11 @@ def status_dot(frame, x, y, color, r=5):
 
 
 # ─────────────────────────────────────────────
-# THREADED HARDWARE CAMERA CAPTURE
+# THREADED HARDWARE CAMERA CAPTURE (LOW LATENCY)
 # ─────────────────────────────────────────────
 
 class ThreadedCamera:
-    """Non-blocking camera grabber that provides the freshest frame at maximum FPS."""
+    """Ultra-low latency grabber providing latest frame with zero queue buildup."""
     def __init__(self, src=0):
         self.src = src
         self.cap = None
@@ -163,6 +171,7 @@ class ThreadedCamera:
         self.frame = None
         self.lock = Lock()
         self.is_opened = False
+        self.frame_id = 0
         self.start()
 
     def start(self):
@@ -175,7 +184,6 @@ class ThreadedCamera:
             self.cap = cv2.VideoCapture(self.src)
 
         if self.cap.isOpened():
-            # Configure high-speed 30 FPS stream
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
@@ -185,26 +193,29 @@ class ThreadedCamera:
             self.is_opened = True
             self.running = True
             Thread(target=self._update, daemon=True).start()
-            print("[+] ThreadedCamera capture initialized at 30 FPS.")
+            print("[+] ThreadedCamera capture initialized.")
         else:
             self.is_opened = False
 
     def _update(self):
         while self.running:
             if self.cap is not None and self.cap.isOpened():
-                ret, frame = self.cap.read()
-                if ret:
-                    with self.lock:
-                        self.frame = frame
+                grabbed = self.cap.grab()
+                if grabbed:
+                    ret, frame = self.cap.retrieve()
+                    if ret and frame is not None:
+                        with self.lock:
+                            self.frame = frame
+                            self.frame_id += 1
                 else:
-                    time.sleep(0.01)
+                    time.sleep(0.005)
             else:
                 break
-            time.sleep(0.005)
+            time.sleep(0.001)
 
     def read(self):
         with self.lock:
-            return self.frame.copy() if self.frame is not None else None
+            return self.frame.copy() if self.frame is not None else None, self.frame_id
 
     def release(self):
         self.running = False
@@ -223,6 +234,7 @@ class FaceDetectionEngine:
 
         self.known_encodings = []
         self.known_names = []
+        self.unique_names = set()
         self.load_known_faces()
 
         # Detector Setup
@@ -238,7 +250,7 @@ class FaceDetectionEngine:
                                                   [0, 1, 0, 1],
                                                   [0, 0, 1, 0],
                                                   [0, 0, 0, 1]], np.float32)
-        self.kalman.processNoiseCov   = np.eye(4, dtype=np.float32) * 0.04
+        self.kalman.processNoiseCov   = np.eye(4, dtype=np.float32) * 0.05
         self.kalman_initialized = False
 
         # Camera FOV constants
@@ -252,7 +264,7 @@ class FaceDetectionEngine:
         self.last_bbox    = None
         self.trail        = deque(maxlen=24)
 
-        # Recognition worker state (asynchronous non-blocking face recognition)
+        # Recognition worker state
         self.is_recognizing = False
         self.recognition_lock = Lock()
         self.last_recognition_time = 0.0
@@ -269,7 +281,7 @@ class FaceDetectionEngine:
         self.last_fps_time = time.time()
         self.render_hud_overlay = True
 
-        # Simulation angle
+        # Simulation
         self.sim_angle = 0.0
 
     def init_detectors(self):
@@ -278,7 +290,7 @@ class FaceDetectionEngine:
                 base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
                 options = mp_vision.FaceDetectorOptions(
                     base_options=base_options,
-                    min_detection_confidence=0.50
+                    min_detection_confidence=0.45
                 )
                 self.face_detector = mp_vision.FaceDetector.create_from_options(options)
                 print("[+] MediaPipe BlazeFace Detector initialized.")
@@ -358,9 +370,11 @@ class FaceDetectionEngine:
             if os.path.exists(temp_path): os.remove(temp_path)
             return False, "No face detected in image"
 
-        save_path = os.path.join(self.known_faces_dir, f"{name}.jpg")
+        target_dir = os.path.join(self.known_faces_dir, name)
+        os.makedirs(target_dir, exist_ok=True)
+        idx = len(os.listdir(target_dir)) + 1
+        save_path = os.path.join(target_dir, f"{idx:03d}.jpg")
         cv_img = cv2.imread(temp_path)
-        cv_img = cv2.resize(cv_img, (200, 200))
         cv2.imwrite(save_path, cv_img)
         if os.path.exists(temp_path): os.remove(temp_path)
 
@@ -370,11 +384,10 @@ class FaceDetectionEngine:
 
     def remove_face(self, name):
         removed = False
-        if name in self.known_names:
-            idx = self.known_names.index(name)
-            self.known_names.pop(idx)
-            if idx < len(self.known_encodings):
-                self.known_encodings.pop(idx)
+        dir_path = os.path.join(self.known_faces_dir, name)
+        if os.path.exists(dir_path) and os.path.isdir(dir_path):
+            import shutil
+            shutil.rmtree(dir_path, ignore_errors=True)
             removed = True
 
         for ext in ['.jpg', '.jpeg', '.png', '.bmp']:
@@ -383,12 +396,7 @@ class FaceDetectionEngine:
                 os.remove(path)
                 removed = True
 
-        dir_path = os.path.join(self.known_faces_dir, name)
-        if os.path.exists(dir_path) and os.path.isdir(dir_path):
-            import shutil
-            shutil.rmtree(dir_path, ignore_errors=True)
-            removed = True
-
+        self.load_known_faces()
         socketio.emit('status_update', self.get_status())
         return removed
 
@@ -456,7 +464,6 @@ class FaceDetectionEngine:
         h, w, _ = frame.shape
         boxes = []
 
-        # 1. MediaPipe BlazeFace on 320x240 (runs in ~2-3ms instead of 35ms)
         if self.face_detector is not None:
             try:
                 rgb_small = cv2.resize(rgb, (320, 240))
@@ -481,7 +488,6 @@ class FaceDetectionEngine:
             except Exception:
                 pass
 
-        # 2. Fast Downscaled Cascade Fallback (2-3ms)
         if self.cascade_detector is not None:
             small_gray = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (320, 240))
             faces = self.cascade_detector.detectMultiScale(small_gray, 1.2, 3, minSize=(25, 25))
@@ -494,7 +500,7 @@ class FaceDetectionEngine:
         h, w, _ = frame.shape
         cx_f, cy_f = w // 2, h // 2
 
-        # Precision FPS calculation
+        # FPS calculation
         self.frame_count += 1
         now = time.time()
         if now - self.last_fps_time >= 0.5:
@@ -506,16 +512,16 @@ class FaceDetectionEngine:
         status_text = "SEARCHING"
         status_color = C_AMBER
 
-        # Run face detection
-        detected_boxes = self.detect_face_fast(frame, rgb)
+        # Run face detection on alternate frames (interleaved 60 FPS Kalman prediction)
+        detected_boxes = []
+        if self.frame_count % 2 == 0 or not self.tracking:
+            detected_boxes = self.detect_face_fast(frame, rgb)
 
         if detected_boxes:
-            # Pick primary target (closest/largest face)
             best = max(detected_boxes, key=lambda b: b[2] * b[3])
             bx, by, bw, bh = best[0], best[1], best[2], best[3]
             det_score = best[4] if len(best) > 4 else 0.80
 
-            # Kalman Filter Update & Prediction
             meas_x = float(bx + bw / 2)
             meas_y = float(by + bh / 2)
 
@@ -538,7 +544,7 @@ class FaceDetectionEngine:
             status_text = "TRACKING"
             status_color = C_KNOWN
 
-            # Throttled asynchronous face recognition (runs once every 1.5s or on new face)
+            # Throttled asynchronous face recognition
             now_time = time.time()
             need_rec = (self.tracked_name == "Unknown" or self.tracked_name == "None" or (now_time - self.last_recognition_time > 1.5))
             if FACE_REC_AVAILABLE and self.known_encodings and not self.is_recognizing and need_rec:
@@ -553,18 +559,40 @@ class FaceDetectionEngine:
                        args=(rgb.copy(), top, right, bottom, left),
                        daemon=True).start()
 
-            # Target angles relative to FOV
+        elif self.tracking and self.kalman_initialized:
+            # Predict Kalman smoothly on intervening frame (<0.05ms)
+            pred = self.kalman.predict()
+            smooth_x = int(pred[0][0])
+            smooth_y = int(pred[1][0])
+            self.trail.append((smooth_x, smooth_y))
+            status_text = "TRACKING"
+            status_color = C_KNOWN
+            bx, by, bw, bh = self.last_bbox
+
+        else:
+            if self.tracking:
+                self.tracking = False
+                status_text = "LOST"
+                status_color = C_UNKNOWN
+                self.log_event(self.tracked_name, "LOST")
+                self.tracked_name = "None"
+                self.yaw = 0.0
+                self.pitch = 0.0
+                self.command = "● SEARCHING"
+                self.trail.clear()
+                self.kalman_initialized = False
+
+        # If currently tracking, calculate angles and draw target overlays
+        if self.tracking:
             self.yaw   = (smooth_x - cx_f) / float(w) * self.HORIZONTAL_FOV
             self.pitch = (smooth_y - cy_f) / float(h) * self.VERTICAL_FOV
 
-            # Command computation
             if   self.yaw   >  8: self.command = "▶ TURN RIGHT"
             elif self.yaw   < -8: self.command = "◀ TURN LEFT"
             elif self.pitch >  6: self.command = "▼ LOOK DOWN"
             elif self.pitch < -6: self.command = "▲ LOOK UP"
             else:                 self.command = "● CENTERED"
 
-            # Render Target Box & HUD Overlays
             if self.render_hud_overlay:
                 box_color = C_KNOWN if (self.tracked_name != "Unknown" and self.tracked_name != "None") else C_UNKNOWN
                 corner_brackets(frame,
@@ -583,20 +611,6 @@ class FaceDetectionEngine:
                         alpha = i / float(len(self.trail))
                         col = tuple(int(c * alpha) for c in C_CYAN)
                         cv2.line(frame, self.trail[i - 1], self.trail[i], col, max(1, int(2 * alpha)), cv2.LINE_AA)
-
-        else:
-            # When target temporarily leaves frame
-            if self.tracking:
-                self.tracking = False
-                status_text = "LOST"
-                status_color = C_UNKNOWN
-                self.log_event(self.tracked_name, "LOST")
-                self.tracked_name = "None"
-                self.yaw = 0.0
-                self.pitch = 0.0
-                self.command = "● SEARCHING"
-                self.trail.clear()
-                self.kalman_initialized = False
 
         # ─────────────────────────────────────────────
         # RENDER FULL SCI-FI HUD ON VIDEO FRAME
@@ -641,7 +655,7 @@ class FaceDetectionEngine:
                         (w - 155, 98), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
 
             # 5. Center Reticle & Crosshair
-            crosshair(frame, cx_f, cy_f, sz=24, color=C_CYAN)
+            crosshair(frame, cx_f, cy_f, sz=22, color=C_CYAN)
 
             # 6. Bottom Command Banner
             if self.tracking:
@@ -654,7 +668,7 @@ class FaceDetectionEngine:
         return frame
 
     def generate_simulated_frame(self):
-        """Generates high-speed 30 FPS simulated HUD feed when no physical camera is attached."""
+        """Generates high-speed 60 FPS simulated HUD feed when no physical camera is attached."""
         w, h = 640, 480
         frame = np.zeros((h, w, 3), dtype=np.uint8)
         self.sim_angle += 0.05
@@ -674,9 +688,9 @@ class FaceDetectionEngine:
 
         self.tracking = True
         self.confidence = 0.96
-        self.tracked_name = self.known_names[0] if self.known_names else "Target Alpha"
+        self.tracked_name = "piyush"
         self.last_bbox = (target_cx - bw // 2, target_cy - bh // 2, bw, bh)
-        self.fps = 30
+        self.fps = 60
 
         self.yaw = (target_cx - w / 2) / float(w) * self.HORIZONTAL_FOV
         self.pitch = (target_cy - h / 2) / float(h) * self.VERTICAL_FOV
@@ -701,13 +715,13 @@ class FaceDetectionEngine:
 
         # Full HUD
         hud_panel(frame, 0, 0, w, 30, alpha=0.75)
-        cv2.putText(frame, "HUMAN DETECTION ROBOT  //  TACTICAL HUD (SIM)",
+        cv2.putText(frame, "HUMAN DETECTION ROBOT  //  TACTICAL HUD (SIM 60FPS)",
                     (12, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.48, C_CYAN, 1, cv2.LINE_AA)
         ts_str = datetime.now().strftime("%Y-%m-%d  %H:%M:%S")
         cv2.putText(frame, ts_str, (w - 185, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.40, C_WHITE, 1, cv2.LINE_AA)
 
         hud_panel(frame, 10, 36, 185, 105, alpha=0.65)
-        cv2.putText(frame, "FPS    30.0 (SIM)", (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
+        cv2.putText(frame, "FPS    60.0 (SIM)", (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_WHITE, 1, cv2.LINE_AA)
         cv2.putText(frame, f"YAW    {self.yaw:+5.1f} deg", (20, 75), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_CYAN, 1, cv2.LINE_AA)
         cv2.putText(frame, f"PITCH  {self.pitch:+5.1f} deg", (20, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.42, C_CYAN, 1, cv2.LINE_AA)
         cv2.putText(frame, "CONF", (20, 118), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
@@ -720,7 +734,7 @@ class FaceDetectionEngine:
         hud_panel(frame, w - 165, 80, 155, 26, alpha=0.65)
         cv2.putText(frame, f"ROSTER: {len(self.known_names)} PERSONS", (w - 155, 98), cv2.FONT_HERSHEY_SIMPLEX, 0.38, C_DIM, 1, cv2.LINE_AA)
 
-        crosshair(frame, w // 2, h // 2, sz=24, color=C_CYAN)
+        crosshair(frame, w // 2, h // 2, sz=22, color=C_CYAN)
 
         cmd_w = 190
         hud_panel(frame, (w - cmd_w) // 2, h - 42, cmd_w, 32, alpha=0.85)
@@ -739,7 +753,7 @@ class FaceDetectionEngine:
             "tracked_name":    str(self.tracked_name),
             "confidence":      float(round(float(self.confidence), 3)),
             "tracking_status": bool(self.tracking),
-            "face_count":      int(len(self.known_names)),
+            "face_count":      int(len(self.unique_names)),
             "bbox":            bbox_list,
             "trail":           trail_list,
             "camera_online":   bool(self.camera_online),
@@ -750,7 +764,7 @@ class FaceDetectionEngine:
         return {
             "camera_online":     bool(self.camera_online),
             "tracking_active":   bool(self.tracking),
-            "known_face_count":  int(len(self.known_names)),
+            "known_face_count":  int(len(self.unique_names)),
             "serial_connected":  False,
             "uptime_seconds":    int(time.time() - self.start_time),
             "render_hud":        bool(self.render_hud_overlay)
@@ -765,35 +779,32 @@ engine = FaceDetectionEngine()
 # ─────────────────────────────────────────────
 
 def video_processing_thread():
-    global latest_frame
     threaded_cam = ThreadedCamera(src=0)
+    last_processed_id = -1
 
     if not threaded_cam.is_opened:
         engine.camera_online = False
-        print("[i] Physical camera not connected. Running 30 FPS simulated HUD stream.")
+        print("[i] Physical camera not connected. Running simulated HUD stream.")
         while True:
             sim_frame = engine.generate_simulated_frame()
-            ret, buffer = cv2.imencode('.jpg', sim_frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            ret, buffer = cv2.imencode('.jpg', sim_frame, [cv2.IMWRITE_JPEG_QUALITY, 65, cv2.IMWRITE_JPEG_OPTIMIZE, 0])
             if ret:
-                with frame_condition:
-                    latest_frame = buffer.tobytes()
-                    frame_condition.notify_all()
-            time.sleep(0.033)
+                broadcaster.update(buffer.tobytes())
+            time.sleep(0.016)  # 60 FPS simulation
 
     engine.camera_online = True
 
     while True:
-        frame = threaded_cam.read()
-        if frame is None:
-            time.sleep(0.005)
+        frame, frame_id = threaded_cam.read()
+        if frame is None or frame_id == last_processed_id:
+            time.sleep(0.002)
             continue
 
+        last_processed_id = frame_id
         annotated = engine.process_frame(frame)
-        ret, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 72])
+        ret, buffer = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 65, cv2.IMWRITE_JPEG_OPTIMIZE, 0])
         if ret:
-            with frame_condition:
-                latest_frame = buffer.tobytes()
-                frame_condition.notify_all()
+            broadcaster.update(buffer.tobytes())
 
         time.sleep(0.001)
 
@@ -801,18 +812,17 @@ def video_processing_thread():
 def telemetry_thread():
     while True:
         socketio.emit('telemetry_update', engine.get_telemetry())
-        time.sleep(0.04)  # 25 Hz smooth telemetry
+        time.sleep(0.033)  # 30 Hz real-time telemetry synchronization
 
 
 def generate_frames():
-    """Event-synchronized MJPEG stream generator delivering continuous 30 FPS with zero duplicate buffering."""
+    """Event-synchronized MJPEG stream generator delivering continuous 30-60 FPS with zero duplicate buffering."""
+    last_sent_id = 0
     while True:
-        with frame_condition:
-            frame_condition.wait(timeout=0.04)
-            frame_data = latest_frame
-        if frame_data is not None:
+        frame_bytes, last_sent_id = broadcaster.get_latest(last_sent_id, timeout=0.04)
+        if frame_bytes is not None:
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame_data + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 
 # ─────────────────────────────────────────────
@@ -826,8 +836,12 @@ def index():
 
 @app.route('/video_feed')
 def video_feed():
-    return Response(generate_frames(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
+    res = Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+    res.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    res.headers['Pragma'] = 'no-cache'
+    res.headers['Expires'] = '0'
+    res.headers['X-Accel-Buffering'] = 'no'
+    return res
 
 
 @app.route('/api/faces', methods=['GET'])
@@ -878,7 +892,7 @@ def status():
 
 
 if __name__ == '__main__':
-    print("[*] Initializing High-FPS Robot HUD Dashboard System...")
+    print("[*] Initializing Ultra-Smooth Robot HUD Dashboard...")
     Thread(target=video_processing_thread, daemon=True).start()
     Thread(target=telemetry_thread,        daemon=True).start()
     print("[*] Dashboard server running at: http://localhost:5000")

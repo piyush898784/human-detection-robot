@@ -464,11 +464,23 @@
             document.getElementById('status-txt-ws').textContent = 'DISCONNECTED';
         });
 
-        // Telemetry stream
+        // Telemetry stream (Hardware-synced via requestAnimationFrame)
+        let pendingTelemetry = null;
+        let animFrameScheduled = false;
+
         socket.on('telemetry_update', (data) => {
-            lastTelemetry = data;
-            updateTelemetryDisplay(data);
-            renderHudOverlay(data);
+            pendingTelemetry = data;
+            if (!animFrameScheduled) {
+                animFrameScheduled = true;
+                requestAnimationFrame(() => {
+                    if (pendingTelemetry) {
+                        lastTelemetry = pendingTelemetry;
+                        updateTelemetryDisplay(pendingTelemetry);
+                        renderHudOverlay(pendingTelemetry);
+                    }
+                    animFrameScheduled = false;
+                });
+            }
         });
 
         // Detection Event Stream

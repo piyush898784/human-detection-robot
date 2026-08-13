@@ -463,6 +463,9 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 #video-stream, #webrtc-video {
@@ -471,6 +474,9 @@ body {
     object-fit: contain;
     display: block;
     user-select: none;
+    transform: translate3d(0, 0, 0);
+    will-change: transform;
+    backface-visibility: hidden;
 }
 
 /* Scanlines & Grid */
