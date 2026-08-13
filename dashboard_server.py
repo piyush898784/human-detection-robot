@@ -1,6 +1,11 @@
+import os
+# Suppress TensorFlow and MediaPipe Clearcut log noise
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['GLOG_minloglevel'] = '3'
+os.environ['MEDIAPIPE_DISABLE_GPU'] = '1'
+
 import cv2
 import numpy as np
-import os
 import time
 import base64
 import math
@@ -407,10 +412,10 @@ class FaceDetectionEngine:
 
     def log_event(self, name, action, confidence=None):
         evt = {
-            "timestamp":  time.time(),
-            "name":       name,
-            "action":     action,
-            "confidence": confidence
+            "timestamp":  float(time.time()),
+            "name":       str(name),
+            "action":     str(action),
+            "confidence": float(confidence) if confidence is not None else None
         }
         self.events.append(evt)
         socketio.emit('detection_event', evt)
@@ -706,31 +711,31 @@ class FaceDetectionEngine:
         return frame
 
     def get_telemetry(self):
-        trail_list = list(self.trail)
-        bbox_list = list(self.last_bbox) if self.last_bbox is not None else None
+        trail_list = [[int(pt[0]), int(pt[1])] for pt in self.trail]
+        bbox_list = [int(v) for v in self.last_bbox] if self.last_bbox is not None else None
         return {
-            "fps":             self.fps if self.fps > 0 else 30,
-            "yaw":             round(self.yaw, 2),
-            "pitch":           round(self.pitch, 2),
-            "command":         self.command,
-            "tracked_name":    self.tracked_name,
-            "confidence":      round(self.confidence, 3),
-            "tracking_status": self.tracking,
-            "face_count":      len(self.known_names),
+            "fps":             int(self.fps if self.fps > 0 else 30),
+            "yaw":             float(round(float(self.yaw), 2)),
+            "pitch":           float(round(float(self.pitch), 2)),
+            "command":         str(self.command),
+            "tracked_name":    str(self.tracked_name),
+            "confidence":      float(round(float(self.confidence), 3)),
+            "tracking_status": bool(self.tracking),
+            "face_count":      int(len(self.known_names)),
             "bbox":            bbox_list,
             "trail":           trail_list,
-            "camera_online":   self.camera_online,
-            "timestamp":       time.time()
+            "camera_online":   bool(self.camera_online),
+            "timestamp":       float(time.time())
         }
 
     def get_status(self):
         return {
-            "camera_online":     self.camera_online,
-            "tracking_active":   self.tracking,
-            "known_face_count":  len(self.known_names),
+            "camera_online":     bool(self.camera_online),
+            "tracking_active":   bool(self.tracking),
+            "known_face_count":  int(len(self.known_names)),
             "serial_connected":  False,
             "uptime_seconds":    int(time.time() - self.start_time),
-            "render_hud":        self.render_hud_overlay
+            "render_hud":        bool(self.render_hud_overlay)
         }
 
 
